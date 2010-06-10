@@ -19,8 +19,13 @@
 
 module Qoropa.Buffer
     ( module Qoropa.Buffer.Search
+    , Buffer(..)
     ) where
 
+import Data.IORef    (IORef)
 import Qoropa.Buffer.Search
+
+data Buffer  = BufSearch (IORef Search)
+               | BufUnknown
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

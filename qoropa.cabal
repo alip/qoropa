@@ -24,7 +24,9 @@ library
                 Qoropa.Config
                 Qoropa
 
-        build-depends:  directory, filepath, process, unix
+        ghc-options: -Wall
+
+        build-depends:  containers, directory, filepath, process, unix
         build-depends:  base >=3 && < 5
         build-depends:  mtl >=1.1 && < 1.2
         build-depends:  MissingH >=1.0.0
@@ -35,6 +37,8 @@ library
 executable qoropa
         hs-source-dirs: src
         main-is:        Main.hs
+
+        ghc-options: -Wall
 
         other-modules:
                 Qoropa.Buffer.Search

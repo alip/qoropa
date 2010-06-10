@@ -19,8 +19,6 @@
 
 module Main (main) where
 
-import Qoropa
-
 import Prelude  hiding          (catch)
 import Control.Exception        (catch, SomeException(..))
 import Control.Monad            (unless)
@@ -29,6 +27,10 @@ import System.Exit              (exitFailure)
 import System.IO                (hPrint, hFlush, stderr)
 import System.Info              (arch, os)
 import System.Posix.Process     (executeFile)
+
+import Qoropa.Util              (getQoropaDir, recompile)
+import Qoropa.Config            (defaultConfig)
+import Qoropa                   (qoropa)
 
 main :: IO ()
 main = do
@@ -45,12 +47,12 @@ usage :: IO ()
 usage = do
     self <- getProgName
     putStr . unlines $
-        concat ["Usage: ", self, " [OPTION]"] :
-        "Options:" :
-        "  --help           Display help" :
-        "  --version        Display version" :
-        "  --recompile      Recompile your ~/.qoropa/qoropa.hs" :
-        []
+        [ concat ["Usage: ", self, " [OPTION]"]
+        , "Options:"
+        , "  --help           Display help"
+        , "  --version        Display version"
+        , "  --recompile      Recompile your ~/.qoropa/qoropa.hs"
+        ]
 
 launch :: IO ()
 launch = do

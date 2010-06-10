@@ -18,30 +18,15 @@
 -}
 
 module Qoropa
-    ( module Qoropa.Config
-    , module Qoropa.Util
-    , module Qoropa.Notmuch
-    , module Qoropa.Buffer
-    , module Qoropa.UI
-    , qoropa
+    ( qoropa
     ) where
 
-import Qoropa.Config
-import Qoropa.Util
-import Qoropa.Notmuch
-import Qoropa.Buffer
-import Qoropa.UI
-
-import Control.Concurrent (forkIO)
+import Qoropa.Config (QoropaConfig)
+import Qoropa.UI     (start, mainLoop)
 
 qoropa :: QoropaConfig -> IO ()
 qoropa conf = do
     ui   <- start
-    path <- expandTilde (databasePath conf)
-    let term = "tag:inbox"
-
-    forkIO (queryThreads ui path term)
-
-    mainLoop ui
+    mainLoop conf ui
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

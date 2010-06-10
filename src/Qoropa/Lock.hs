@@ -56,19 +56,18 @@ module Qoropa.Lock
 -- from base:
 import Control.Applicative     ( liftA2 )
 import Control.Concurrent.MVar ( MVar, newMVar, newEmptyMVar
-                               , takeMVar, tryTakeMVar
+                               , takeMVar
                                , tryPutMVar
                                , isEmptyMVar
                                )
-import Control.Exception       ( block, bracket_, finally )
-import Control.Monad           ( Monad, return, (>>=), (>>), fail, when )
-import Data.Bool               ( Bool, not )
+import Control.Exception       ( block, bracket_ )
+import Control.Monad           ( Monad, return, (>>=), (>>), fail, unless )
+import Data.Bool               ( Bool )
 #ifdef __HADDOCK__
 import Data.Bool               ( Bool(False, True) )
 #endif
 import Data.Eq                 ( Eq )
 import Data.Function           ( ($) )
-import Data.Maybe              ( Maybe(Nothing, Just), isJust )
 import Data.Typeable           ( Typeable )
 import Prelude                 ( error, (.) )
 import System.IO               ( IO )
@@ -138,7 +137,7 @@ If there are any threads blocked on 'acquire' the thread that first called
 release :: Lock -> IO ()
 release (Lock mv) = do
   b <- tryPutMVar mv ()
-  when (not b) $ error "Control.Concurrent.Lock.release: Can't release unlocked Lock!"
+  unless b $ error "Control.Concurrent.Lock.release: Can't release unlocked Lock!"
 
 
 --------------------------------------------------------------------------------

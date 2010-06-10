@@ -17,8 +17,6 @@
 - Author: Ali Polatel <alip@exherbo.org>
 -}
 
-module Qoropa.Buffer.Search where
-
-data SearchWindow
+module Qoropa.Buffer where data Buffer
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

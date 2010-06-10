@@ -18,20 +18,18 @@
 -}
 
 module Qoropa.Buffer.Search
-    ( SearchAttr(..), SearchBar(..), SearchMsg(..), SearchLine(..), SearchWindow(..)
-    , emptySearchWindow
-    , scrollBackward, scrollForward
+    ( Attributes(..), StatusBar(..), StatusMessage(..), Line(..), Theme(..), Search(..)
+    , emptySearch
+    , paint, load, new
+    , scrollUp, scrollDown
     , selectPrev, selectNext
-    , paintSearchWindow
-    , queryThreads
     ) where
 
-import Control.Concurrent.MVar  (MVar, newEmptyMVar, putMVar, takeMVar)
+import Control.Concurrent.MVar  (MVar, putMVar)
 import Control.Monad            (when)
 import Data.IORef               (IORef, readIORef, writeIORef)
 import Data.String.Utils        (join)
 import Text.Printf              (printf)
-import Debug.Trace              (putTraceMsg)
 
 import Codec.Binary.UTF8.String (decodeString)
 
@@ -45,269 +43,295 @@ import Graphics.Vty
     , pic_for_image
     )
 
-import Email.Notmuch
-    ( Database, DatabaseOpenMode(..), databaseOpen, databaseClose
-    , Query, queryCreate, querySearchThreads
-    , Threads, threadsValid, threadsGet, threadsMoveToNext, threadsDestroy
+import qualified Email.Notmuch as NM
+    ( DatabaseOpenMode(..), databaseOpen, databaseClose
+    , queryCreate, querySearchThreads
+    , Threads, threadsValid, threadsGet, threadsMoveToNext
     , Thread, threadMatchedMessages, threadTotalMessages
     , threadAuthors, threadSubject, threadTags, threadDestroy
-    , Tags, tagsDestroy
+    , tagsDestroy
     )
 
-import qualified Qoropa.Lock as Lock (with)
 import Qoropa.Notmuch (tagsToList)
 import Qoropa.Util    (beep)
-import {-# SOURCE #-} Qoropa.UI ( UI(..), UIEvent(..) )
 
-data SearchAttr = SearchAttr
-    { attrBar     :: Attr
-    , attrMsg     :: Attr
-    , attrSel     :: Attr
-    , attrDef     :: Attr
-    , attrEmpty   :: Attr
-    , attrTag     :: Attr
-    , attrSelTag  :: Attr
-    , attrNum     :: Attr
-    , attrSelNum  :: Attr
+import Qoropa.Lock (Lock)
+import qualified Qoropa.Lock as Lock (with)
+import {-# SOURCE #-} Qoropa.UI (UIEvent(..))
+
+data Line = Line
+    { lineIndex      :: Int
+    , threadMatched  :: Integer
+    , threadTotal    :: Integer
+    , threadAuthors  :: String
+    , threadSubject  :: String
+    , threadTags     :: [String]
     }
 
-data SearchBar = SearchBar
-    { bTerm     :: String
-    , bCurrent  :: Int
-    , bTotal    :: Int
+data StatusBar = StatusBar
+    { sBarTerm     :: String
+    , sBarCurrent  :: Int
+    , sBarTotal    :: Int
     }
 
-data SearchMsg = SearchMsg { mMsg :: String }
-
-data SearchLine = SearchLine
-    { lIndex    :: Int
-    , tMatched  :: Integer
-    , tTotal    :: Integer
-    , tAuthors  :: String
-    , tSubject  :: String
-    , tTags     :: [String]
+data StatusMessage = StatusMessage
+    { sMessage :: String
     }
 
-data SearchWindow = SearchWindow
-    { wFirst     :: Int
-    , wSelected  :: Int
-    , wLines     :: [SearchLine]
-    , wBar       :: SearchBar
-    , wMsg       :: SearchMsg
-    , wAttr      :: SearchAttr
+data Attributes = Attributes
+    { attrStatusBar      :: Attr
+    , attrStatusMessage  :: Attr
+    , attrSelected       :: Attr
+    , attrDefault        :: Attr
+    , attrEmpty          :: Attr
+    , attrTag            :: Attr
+    , attrSelectedTag    :: Attr
+    , attrNumber         :: Attr
+    , attrSelectedNumber :: Attr
     }
 
-defaultSearchAttr :: SearchAttr
-defaultSearchAttr = SearchAttr { attrBar    = def_attr `with_back_color` bright_white `with_fore_color` bright_blue
-                               , attrMsg    = def_attr `with_back_color` black `with_fore_color` bright_yellow
-                               , attrSel    = def_attr `with_back_color` cyan `with_fore_color` black
-                               , attrDef    = def_attr `with_back_color` black `with_fore_color` white
-                               , attrEmpty  = def_attr `with_back_color` black `with_fore_color` cyan
-                               , attrTag    = def_attr `with_back_color` black `with_fore_color` yellow
-                               , attrSelTag = def_attr `with_back_color` cyan `with_fore_color` bright_yellow
-                               , attrNum    = def_attr `with_back_color` black `with_fore_color` bright_white
-                               , attrSelNum = def_attr `with_back_color` cyan `with_fore_color` bright_black
-                               }
+data Theme = Theme
+    { themeAttrs             :: Attributes
+    , themeEmptyFill         :: String
+    , themeDrawLine          :: Attributes -> Int -> Line -> Image
+    , themeDrawStatusBar     :: Attributes -> StatusBar -> Image
+    , themeDrawStatusMessage :: Attributes -> StatusMessage -> Image
+    }
 
-emptySearchBar :: SearchBar
-emptySearchBar = SearchBar { bTerm    = ""
-                           , bCurrent = 1
-                           , bTotal   = 0
-                           }
+data Search = Search
+    { bufferFirst         :: Int
+    , bufferSelected      :: Int
+    , bufferLines         :: [Line]
+    , bufferStatusBar     :: StatusBar
+    , bufferStatusMessage :: StatusMessage
+    , bufferTheme         :: Theme
+    }
 
-emptySearchMsg :: SearchMsg
-emptySearchMsg = SearchMsg { mMsg = " " }
+defaultAttributes :: Attributes
+defaultAttributes = Attributes
+    { attrStatusBar      = def_attr `with_back_color` bright_white `with_fore_color` bright_blue
+    , attrStatusMessage  = def_attr `with_back_color` black `with_fore_color` bright_yellow
+    , attrSelected       = def_attr `with_back_color` cyan `with_fore_color` black
+    , attrDefault        = def_attr `with_back_color` black `with_fore_color` white
+    , attrEmpty          = def_attr `with_back_color` black `with_fore_color` cyan
+    , attrTag            = def_attr `with_back_color` black `with_fore_color` yellow
+    , attrSelectedTag    = def_attr `with_back_color` cyan `with_fore_color` bright_yellow
+    , attrNumber         = def_attr `with_back_color` black `with_fore_color` bright_white
+    , attrSelectedNumber = def_attr `with_back_color` cyan `with_fore_color` bright_black
+    }
 
-emptySearchWindow :: SearchWindow
-emptySearchWindow = SearchWindow { wFirst     = 1
-                                 , wSelected  = 1
-                                 , wLines     = []
-                                 , wBar       = emptySearchBar
-                                 , wMsg       = emptySearchMsg
-                                 , wAttr      = defaultSearchAttr
-                                 }
+defaultTheme :: Theme
+defaultTheme = Theme
+    { themeAttrs             = defaultAttributes
+    , themeEmptyFill         = "~"
+    , themeDrawLine          = drawLine
+    , themeDrawStatusBar     = drawStatusBar
+    , themeDrawStatusMessage = drawStatusMessage
+    }
 
-drawSearchLine :: SearchAttr -> Int -> SearchLine -> Image
-drawSearchLine attr selected line =
-    horiz_cat [ string myNumAttr myNumFmt
-              , char myDefAttr ' '
-              , string myDefAttr myDefFmt
-              , char myDefAttr ' '
-              , string myTagAttr myTagFmt
+emptyStatusBar :: StatusBar
+emptyStatusBar = StatusBar
+    { sBarTerm    = ""
+    , sBarCurrent = 1
+    , sBarTotal   = 0
+    }
+
+emptyStatusMessage :: StatusMessage
+emptyStatusMessage = StatusMessage { sMessage = " " }
+
+emptySearch :: Search
+emptySearch = Search
+    { bufferFirst         = 1
+    , bufferSelected      = 1
+    , bufferLines         = []
+    , bufferStatusBar     = emptyStatusBar
+    , bufferStatusMessage = emptyStatusMessage
+    , bufferTheme         = defaultTheme
+    }
+
+drawLine :: Attributes -> Int -> Line -> Image
+drawLine attr selected line =
+    horiz_cat [ string myNumberAttribute myNumberFormat
+              , char myDefaultAttribute ' '
+              , string myDefaultAttribute myDefaultFormat
+              , char myDefaultAttribute ' '
+              , string myTagAttribute myTagFormat
               ]
     where
-        myNumAttr = if selected == lIndex line then attrSelNum attr else attrNum attr
-        myDefAttr = if selected == lIndex line then attrSel attr else attrDef attr
-        myTagAttr = if selected == lIndex line then attrSelTag attr else attrTag attr
-        myNumFmt = printf " %d/%d" (tMatched line) (tTotal line)
-        myDefFmt = printf "%s - %s" (tAuthors line) (tSubject line)
-        myTagFmt = join " " $ map ('+' :) (tTags line)
+        myNumberAttribute  = if selected == lineIndex line then attrSelectedNumber attr else attrNumber attr
+        myDefaultAttribute = if selected == lineIndex line then attrSelected attr else attrDefault attr
+        myTagAttribute     = if selected == lineIndex line then attrSelectedTag attr else attrTag attr
+        myNumberFormat     = printf " %d/%d" (threadMatched line) (threadTotal line)
+        myDefaultFormat    = printf "%s - %s" (threadAuthors line) (threadSubject line)
+        myTagFormat        = join " " $ map ('+' :) (threadTags line)
 
-drawSearchBar :: SearchAttr -> SearchBar -> Image
-drawSearchBar attr bar =
-    string myattr myfmt
+drawStatusBar :: Attributes -> StatusBar -> Image
+drawStatusBar attr bar =
+    string myAttribute myFormat
     where
-        myattr = attrBar attr
-        myfmt  = bTerm bar ++ " [" ++ show (bCurrent bar) ++ "/" ++ show (bTotal bar) ++ "]"
+        myAttribute = attrStatusBar attr
+        myFormat  = sBarTerm bar ++ " [" ++ show (sBarCurrent bar) ++ "/" ++ show (sBarTotal bar) ++ "]"
 
-drawSearchMsg :: SearchAttr -> SearchMsg -> Image
-drawSearchMsg attr msg = string (attrMsg attr) (mMsg msg)
+drawStatusMessage :: Attributes -> StatusMessage -> Image
+drawStatusMessage attr msg = string (attrStatusMessage attr) (sMessage msg)
 
-paintSearchWindow :: SearchWindow -> Int -> Picture
-paintSearchWindow win h =
-    pic_for_image $ vert_cat $ lines ++ fill ++ [bar, msg]
+paint :: Search -> Int -> Picture
+paint buf height =
+    pic_for_image $ vert_cat $ lns ++ fill ++ [bar, msg]
     where
-        lines = take (h - 2) $ drop (wFirst win - 1) $ map (drawSearchLine (wAttr win) (wSelected win)) (wLines win)
-        fill  = if length lines < h - 2
-            then replicate (h - 2 - length lines) (string (attrEmpty $ wAttr win) "~")
+        myFirst             = bufferFirst buf
+        mySelected          = bufferSelected buf
+        myLines             = bufferLines buf
+        myTheme             = bufferTheme buf
+        myAttr              = themeAttrs myTheme
+        myDrawLine          = themeDrawLine myTheme
+        myDrawStatusBar     = themeDrawStatusBar myTheme
+        myDrawStatusMessage = themeDrawStatusMessage myTheme
+
+        lns = take (height - 2) $ drop (myFirst - 1) $ map (myDrawLine myAttr mySelected) myLines
+
+        len = length lns
+        fill  = if len < height - 2
+            then replicate (height - 2 - len) (string (attrEmpty myAttr) (themeEmptyFill myTheme))
             else []
-        bar   = drawSearchBar (wAttr win) (wBar win)
-        msg   = drawSearchMsg (wAttr win) (wMsg win)
 
-scrollBackward :: UI -> Int -> IO ()
-scrollBackward ui count = Lock.with (searchWinLock ui) (scrollBackward' ui count)
+        bar   = myDrawStatusBar myAttr (bufferStatusBar buf)
+        msg   = myDrawStatusMessage myAttr (bufferStatusMessage buf)
 
-scrollBackward' :: UI -> Int -> IO ()
-scrollBackward' ui count = do
-    win <- readIORef (searchWin ui)
-    let first = wFirst win - count
+scrollUp :: (IORef Search, Lock) -> Int -> IO ()
+scrollUp (ref, lock) count = Lock.with lock (scrollUp' ref count)
+
+scrollUp' :: IORef Search -> Int -> IO ()
+scrollUp' ref count = do
+    buf <- readIORef ref
+    let first = bufferFirst buf - count
+    let sel   = bufferSelected buf
 
     if first > 0
-        then writeIORef (searchWin ui) win { wFirst = first
-                                           , wSelected = wSelected win - count + 1
-                                           , wBar = (wBar win) { bCurrent = wSelected win - count + 1 }
-                                           }
+        then writeIORef ref buf { bufferFirst     = first
+                                , bufferSelected  = sel - count + 1
+                                , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel - count + 1 }
+                                }
         else do
             beep
-            writeIORef (searchWin ui) win { wMsg = (wMsg win) { mMsg = "Hit the top!" }
-                                          }
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Hit the top!" }
+                               }
 
-    putMVar (uiEvent ui) RedrawSearch
 
-scrollForward :: UI -> Int -> IO ()
-scrollForward ui count = Lock.with (searchWinLock ui) (scrollForward' ui count)
+scrollDown :: (IORef Search, Lock) -> Int -> Int -> IO ()
+scrollDown (ref, lock) cols count = Lock.with lock (scrollDown' ref cols count)
 
-scrollForward' :: UI -> Int -> IO ()
-scrollForward' ui count = do
-    win <- readIORef (searchWin ui)
-    (cols, _) <- readIORef (scrSize ui)
-    let len = length $ wLines win
-    let first = wFirst win + count
+scrollDown' :: IORef Search -> Int -> Int -> IO ()
+scrollDown' ref cols count = do
+    buf <- readIORef ref
+    let len   = length $ bufferLines buf
+    let first = bufferFirst buf + count
+    let sel   = bufferSelected buf
 
     if first + cols - 3 <= len
-        then writeIORef (searchWin ui) win { wFirst = first
-                                           , wSelected = wSelected win + count - 1
-                                           , wBar = (wBar win) { bCurrent = wSelected win + count - 1}
-                                           }
+        then writeIORef ref buf { bufferFirst = first
+                                , bufferSelected = sel + count - 1
+                                , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel + count - 1}
+                                }
         else do
             beep
-            writeIORef (searchWin ui) win { wMsg = (wMsg win) { mMsg = "Hit the bottom!" }
-                                          }
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Hit the bottom!" }
+                               }
 
-    putMVar (uiEvent ui) RedrawSearch
+selectPrev :: (IORef Search, Lock) -> Int -> IO ()
+selectPrev (ref, lock) count = Lock.with lock (selectPrev' ref count)
 
-selectPrev :: UI -> Int -> IO ()
-selectPrev ui count = Lock.with (searchWinLock ui) (selectPrev' ui count)
-
-selectPrev' :: UI -> Int -> IO ()
-selectPrev' ui count = do
-    win <- readIORef (searchWin ui)
-    let sel = wSelected win
-    let first = wFirst win
+selectPrev' :: IORef Search -> Int -> IO ()
+selectPrev' ref count = do
+    buf <- readIORef ref
+    let first = bufferFirst buf
+    let sel   = bufferSelected buf
 
     if sel - count >= 1
         then do
-            writeIORef (searchWin ui) win { wSelected = sel - count
-                                          , wBar = (wBar win) { bCurrent = sel - count }
-                                          }
-            when (sel - count < first) $ scrollBackward' ui count
+            writeIORef ref buf { bufferSelected = sel - count
+                               , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel - count }
+                               }
+            when (sel - count < first) $ scrollUp' ref count
         else do
             beep
-            writeIORef (searchWin ui) win { wMsg = (wMsg win) { mMsg = "Hit the top!" }
-                                          }
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Hit the top!" }
+                               }
 
-    putMVar (uiEvent ui) RedrawSearch
+selectNext :: (IORef Search, Lock) -> Int -> Int -> IO ()
+selectNext (ref, lock) cols count = Lock.with lock (selectNext' ref cols count)
 
-selectNext :: UI -> Int -> IO ()
-selectNext ui count = Lock.with (searchWinLock ui) (selectNext' ui count)
-
-selectNext' :: UI -> Int -> IO ()
-selectNext' ui count = do
-    win <- readIORef (searchWin ui)
-    (cols, _) <- readIORef (scrSize ui)
-    let sel = wSelected win
-    let len = length $ wLines win
-    let last = wFirst win + cols - 3
+selectNext' :: IORef Search -> Int -> Int -> IO ()
+selectNext' ref cols count = do
+    buf <- readIORef ref
+    let sel = bufferSelected buf
+    let len = length $ bufferLines buf
+    let lst = bufferFirst buf + cols - 3
 
     if sel + count <= len
         then do
-            writeIORef (searchWin ui) win { wSelected = sel + count
-                                          , wBar = (wBar win) { bCurrent = sel + count }
-                                          }
-            when (sel + count > last) $ scrollForward' ui count
+            writeIORef ref buf { bufferSelected  = sel + count
+                               , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel + count }
+                               }
+            when (sel + count > lst) $ scrollDown' ref cols count
         else do
             beep
-            writeIORef (searchWin ui) win { wMsg = (wMsg win) { mMsg = "Hit the bottom!" }
-                                          }
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Hit the bottom!" }
+                               }
 
-    putMVar (uiEvent ui) RedrawSearch
+loadOne :: IORef Search -> NM.Thread -> IO ()
+loadOne ref t = do
+    buf <- readIORef ref
+    let len = length $ bufferLines buf
 
-addThread :: UI -> Thread -> IO ()
-addThread ui t = do
-    win <- readIORef (searchWin ui)
+    matched <- NM.threadMatchedMessages t
+    total <- NM.threadTotalMessages t
+    authors <- NM.threadAuthors t
+    subject <- NM.threadSubject t
 
-    let ind = length $ wLines win
-
-    matched <- threadMatchedMessages t
-    total <- threadTotalMessages t
-    authors <- threadAuthors t
-    subject <- threadSubject t
-
-    tags <- threadTags t
+    tags <- NM.threadTags t
     taglist <- tagsToList tags
-    tagsDestroy tags
+    NM.tagsDestroy tags
 
-    let line = SearchLine { lIndex    = ind + 1
-                          , tMatched  = matched
-                          , tTotal    = total
-                          , tAuthors  = decodeString authors
-                          , tSubject  = decodeString subject
-                          , tTags     = taglist
-                          }
+    let line = Line { lineIndex      = len + 1
+                    , threadMatched  = matched
+                    , threadTotal    = total
+                    , threadAuthors  = decodeString authors
+                    , threadSubject  = decodeString subject
+                    , threadTags     = taglist
+                    }
 
-    writeIORef (searchWin ui) win { wLines = wLines win ++ [line]
-                                  , wBar = (wBar win) { bTotal = ind + 1 }
-                                  }
+    writeIORef ref buf { bufferLines     = bufferLines buf ++ [line]
+                       , bufferStatusBar = (bufferStatusBar buf) { sBarTotal = len + 1 }
+                       }
 
-    putMVar (uiEvent ui) RedrawSearch
-
-addThreads :: UI -> Threads -> IO ()
-addThreads ui ts = do
-    v <- threadsValid ts
+load :: (IORef Search, Lock) -> MVar UIEvent -> NM.Threads -> IO ()
+load (ref, lock) mvar ts = do
+    v <- NM.threadsValid ts
     when v $ do
-        (Just t) <- threadsGet ts
-        Lock.with (searchWinLock ui) (addThread ui t)
-        threadDestroy t >> threadsMoveToNext ts >> addThreads ui ts
+        (Just t) <- NM.threadsGet ts
+        Lock.with lock (loadOne ref t >> putMVar mvar Redraw)
+        NM.threadDestroy t >> NM.threadsMoveToNext ts >> load (ref, lock) mvar ts
 
-queryThreads :: UI -> FilePath -> String -> IO ()
-queryThreads ui fp term = do
-    Lock.with (searchWinLock ui) (do
-        win <- readIORef (searchWin ui)
-        writeIORef (searchWin ui) win { wBar = (wBar win) { bTerm = term }
-                                      , wMsg = (wMsg win) { mMsg = "Loading " ++ term ++ " ..." }
-                                      }
-        putMVar (uiEvent ui) RedrawSearch)
+new :: (IORef Search, Lock) -> MVar UIEvent -> FilePath -> String -> IO ()
+new (ref, lock) mvar fp term = do
+    Lock.with lock (do
+        buf <- readIORef ref
+        writeIORef ref buf { bufferStatusBar = (bufferStatusBar buf) { sBarTerm = term }
+                           , bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Loading " ++ term ++ " ..." }
+                           }
+        putMVar mvar Redraw)
 
-    (Just db) <- databaseOpen fp ModeReadOnly
-    (Just query) <- queryCreate db term
-    threads <- querySearchThreads query
-    addThreads ui threads
-    databaseClose db
+    (Just db) <- NM.databaseOpen fp NM.ModeReadOnly
+    (Just query) <- NM.queryCreate db term
+    threads <- NM.querySearchThreads query
+    load (ref, lock) mvar threads
+    NM.databaseClose db
 
-    Lock.with (searchWinLock ui) (do
-        win <- readIORef (searchWin ui)
-        writeIORef (searchWin ui) win { wMsg = (wMsg win) { mMsg = "Done loading " ++ term }
-                                      }
-        putMVar (uiEvent ui) RedrawSearch)
+    Lock.with lock (do
+        buf <- readIORef ref
+        writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Done loading " ++ term }
+                           }
+        putMVar mvar Redraw)
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

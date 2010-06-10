@@ -22,17 +22,22 @@
 
 module Qoropa.UI
     ( UI(..), UIEvent(..)
-    , start, exit, mainLoop, redraw
+    , start, exit, mainLoop
+    , currentBuffer, redraw
+    , scrollUp, scrollDown, selectPrev, selectNext
     ) where
 
 import Control.Concurrent       (ThreadId, forkIO, myThreadId)
-import Control.Concurrent.MVar  (MVar, newEmptyMVar, putMVar, takeMVar, tryPutMVar, tryTakeMVar)
+import Control.Concurrent.MVar  (MVar, newEmptyMVar, putMVar, takeMVar)
 import Control.Exception        (throwTo)
-import Control.Monad            (forever, when)
+import Control.Monad            (forever)
 import Data.IORef               (IORef, newIORef, readIORef, writeIORef)
 import System.Exit              (ExitCode(..))
 import System.Posix.Signals     (raiseSignal, sigTSTP)
-import Debug.Trace              (putTraceMsg)
+
+import Data.Sequence (Seq)
+import qualified Data.Sequence as Seq
+import qualified Data.Map as Map
 
 import Graphics.Vty
     ( Vty, mkVty, reserve_display, shutdown, terminal, update
@@ -40,51 +45,107 @@ import Graphics.Vty
     , Event(..), Key(..), Modifier(..), next_event
     )
 
-import qualified Qoropa.Lock as Lock (Lock, new)
-import Qoropa.Buffer
-    ( SearchBar(..), SearchMsg(..), SearchWindow(..)
-    , emptySearchWindow, paintSearchWindow
-    )
+import Qoropa.Lock (Lock)
+import qualified Qoropa.Lock as Lock (new)
+
 import qualified Qoropa.Buffer.Search as Search
+    ( emptySearch, paint, new
+    , scrollUp, scrollDown
+    , selectNext, selectPrev
+    )
+
+import Qoropa.Buffer (Buffer(..))
+import Qoropa.Config (QoropaConfig(..))
+import Qoropa.Util   (expandTilde)
 
 data UI = UI
-    { vty           :: Vty
-    , uiEvent       :: MVar UIEvent
-    , uiThread      :: ThreadId
-    , scrSize       :: IORef (Int, Int)
-    , searchWin     :: IORef SearchWindow
-    , searchWinLock :: Lock.Lock
+    { vty        :: Vty
+    , uiEvent    :: MVar UIEvent
+    , uiThread   :: ThreadId
+    , scrSize    :: IORef (Int, Int)
+    , bufSeq     :: IORef (Seq (Buffer, Lock))
+    , bufCurrent :: IORef Int
     }
 
 data UIEvent = VtyEvent Event
-               | RedrawSearch
+               | NewSearch String
+               | Redraw
                | Exit
+
+currentBuffer :: UI -> IO (Buffer, Lock)
+currentBuffer ui = do
+    sq <- readIORef (bufSeq ui)
+    cur <- readIORef (bufCurrent ui)
+    return $ Seq.index sq (cur - 1)
 
 redraw :: UI -> IO ()
 redraw ui = do
-    (cols, _) <- readIORef (scrSize ui)
-    win <- readIORef (searchWin ui)
-    update (vty ui) $ paintSearchWindow win cols
+    (buf, _) <- currentBuffer ui
+
+    case buf of
+        BufSearch ref -> do
+            sbuf <- readIORef ref
+            (cols, _) <- readIORef (scrSize ui)
+            update (vty ui) $ Search.paint sbuf cols
+        _ -> return ()
+
+scrollUp :: Int -> UI -> IO ()
+scrollUp count ui = do
+    (buf, lock) <- currentBuffer ui
+    case buf of
+        BufSearch ref -> do
+            forkIO $ Search.scrollUp (ref, lock) count
+            return ()
+        _ -> return ()
+
+scrollDown :: Int -> UI -> IO ()
+scrollDown count ui = do
+    (buf, lock) <- currentBuffer ui
+    case buf of
+        BufSearch ref -> do
+            (cols, _) <- readIORef (scrSize ui)
+            forkIO $ Search.scrollDown (ref, lock) cols count
+            return ()
+        _ -> return ()
+
+selectPrev :: Int -> UI -> IO ()
+selectPrev count ui = do
+    (buf, lock) <- currentBuffer ui
+    case buf of
+        BufSearch ref -> do
+            forkIO $ Search.selectPrev (ref, lock) count
+            return ()
+        _ -> return ()
+
+selectNext :: Int -> UI -> IO ()
+selectNext count ui = do
+    (buf, lock) <- currentBuffer ui
+    case buf of
+        BufSearch ref -> do
+            (cols, _) <- readIORef (scrSize ui)
+            forkIO $ Search.selectNext (ref, lock) cols count
+            return ()
+        _ -> return ()
 
 start :: IO UI
 start = do
     tid          <- myThreadId
     eventUI      <- newEmptyMVar
-    searchLockUI <- Lock.new
 
-    vty <- mkVty
-    DisplayRegion x0 y0 <- display_bounds $ terminal vty
+    vtyUI <- mkVty
+    DisplayRegion x0 y0 <- display_bounds $ terminal vtyUI
     size <- newIORef (fromEnum y0, fromEnum x0)
-    searchWindow <- newIORef emptySearchWindow
-    let ui = UI { vty = vty
-                , scrSize       = size
-                , uiEvent       = eventUI
-                , uiThread      = tid
-                , searchWin     = searchWindow
-                , searchWinLock = searchLockUI
+    sq <- newIORef Seq.empty
+    cur <- newIORef 0
+    let ui = UI { vty        = vtyUI
+                , scrSize    = size
+                , uiEvent    = eventUI
+                , uiThread   = tid
+                , bufSeq     = sq
+                , bufCurrent = cur
                 }
         getcLoop = forever $ do
-            event <- next_event vty
+            event <- next_event vtyUI
             putMVar eventUI (VtyEvent event)
 
     forkIO getcLoop
@@ -97,26 +158,33 @@ exit ui = do
     throwTo (uiThread ui) ExitSuccess
     return ()
 
-mainLoop :: UI -> IO ()
-mainLoop ui = do
-    let
-        eventLoop :: IO ()
-        eventLoop = forever $ do
+mainLoop :: QoropaConfig -> UI -> IO ()
+mainLoop conf ui = do
+    path <- expandTilde (databasePath conf)
+    putMVar (uiEvent ui) $ NewSearch "tag:inbox"
+    eventLoop path
+    where
+        eventLoop :: FilePath -> IO ()
+        eventLoop path = forever $ do
             event <- takeMVar (uiEvent ui)
             case event of
-                VtyEvent e -> do
+                VtyEvent e ->
                     case e of
                         (EvResize x y) -> writeIORef (scrSize ui) (y, x) >> redraw ui
-                        (EvKey (KASCII 'l') [MCtrl]) -> redraw ui
                         (EvKey (KASCII 'z') [MCtrl]) -> raiseSignal sigTSTP
-                        (EvKey (KASCII 'q') []) -> exit ui
-                        (EvKey (KASCII 'j') []) -> forkIO (Search.selectNext ui 1) >> return ()
-                        (EvKey (KASCII 'k') []) -> forkIO (Search.selectPrev ui 1) >> return ()
-                        _ -> return ()
-                RedrawSearch -> redraw ui
+                        _ ->
+                            case Map.lookup e (keys conf) of
+                                Just f -> f ui
+                                Nothing -> return ()
+                NewSearch term -> do
+                    sq <- readIORef (bufSeq ui)
+                    searchRef  <- newIORef Search.emptySearch
+                    searchLock <- Lock.new
+                    writeIORef (bufSeq ui) (sq Seq.|> (BufSearch searchRef, searchLock))
+                    writeIORef (bufCurrent ui) (Seq.length sq + 1)
+                    forkIO $ Search.new (searchRef, searchLock) (uiEvent ui) path term
+                    return ()
+                Redraw -> redraw ui
                 Exit -> exit ui
-
-    putMVar (uiEvent ui) RedrawSearch
-    eventLoop
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

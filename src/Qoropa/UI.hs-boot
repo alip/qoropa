@@ -17,28 +17,42 @@
 - Author: Ali Polatel <alip@exherbo.org>
 -}
 
-module Qoropa.UI where
+module Qoropa.UI
+    ( UI(..), UIEvent(..)
+    , redraw, exit, currentBuffer
+    , scrollUp, scrollDown, selectPrev, selectNext
+    ) where
 
 import Control.Concurrent      (ThreadId)
 import Control.Concurrent.MVar (MVar)
 import Data.IORef              (IORef)
 
-import Graphics.Vty (Vty, Event)
-import {-# SOURCE #-} Qoropa.Buffer.Search (SearchWindow)
+import Data.Sequence (Seq)
+import Graphics.Vty  (Vty, Event)
 
-import qualified Qoropa.Lock as Lock (Lock)
+import Qoropa.Lock                  (Lock)
+import {-# SOURCE #-} Qoropa.Buffer (Buffer)
 
 data UI = UI
-    { vty           :: Vty
-    , uiEvent       :: MVar UIEvent
-    , uiThread      :: ThreadId
-    , scrSize       :: IORef (Int, Int)
-    , searchWin     :: IORef SearchWindow
-    , searchWinLock :: Lock.Lock
+    { vty        :: Vty
+    , uiEvent    :: MVar UIEvent
+    , uiThread   :: ThreadId
+    , scrSize    :: IORef (Int, Int)
+    , bufSeq     :: IORef (Seq (Buffer, Lock))
+    , bufCurrent :: IORef Int
     }
 
 data UIEvent = VtyEvent Event
-               | RedrawSearch
+               | NewSearch String
+               | Redraw
                | Exit
+
+redraw :: UI -> IO ()
+exit :: UI -> IO ()
+currentBuffer :: UI -> IO (Buffer, Lock)
+scrollUp :: Int -> UI -> IO ()
+scrollDown :: Int -> UI -> IO ()
+selectPrev :: Int -> UI -> IO ()
+selectNext :: Int -> UI -> IO ()
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :
