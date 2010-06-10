@@ -29,7 +29,6 @@ import Graphics.Vty (Event(..), Key(..), Modifier(..))
 import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
     , redraw, exit
-    , scrollDown, scrollUp
     , selectPrev, selectNext
     )
 
@@ -41,14 +40,14 @@ data QoropaConfig = QoropaConfig
 
 defaultKeys :: Map Event (UI -> IO ())
 defaultKeys = Map.fromList
-    [ ( EvKey (KASCII 'l') [MCtrl], redraw )
-    , ( EvKey (KASCII 'q') [],      exit )
+    [ ( EvKey (KASCII 'l') [MCtrl], redraw        )
+    , ( EvKey (KASCII 'q') [],      exit          )
     , ( EvKey (KASCII 'j') [],      selectNext 1  )
     , ( EvKey (KASCII 'k') [],      selectPrev 1  )
     , ( EvKey KUp [],               selectPrev 1  )
     , ( EvKey KDown [],             selectNext 1  )
-    , ( EvKey KPageUp [],           scrollUp 10   )
-    , ( EvKey KPageDown [],         scrollDown 10 )
+    , ( EvKey KPageUp [],           selectPrev 10 )
+    , ( EvKey KPageDown [],         selectNext 10 )
     ]
 
 defaultConfig :: QoropaConfig
