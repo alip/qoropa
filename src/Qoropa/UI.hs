@@ -94,7 +94,7 @@ scrollUp count ui = do
     (buf, lock) <- currentBuffer ui
     case buf of
         BufSearch ref -> do
-            forkIO $ Search.scrollUp (ref, lock) count
+            forkIO $ Search.scrollUp (ref, lock) count >> putMVar (uiEvent ui) Redraw
             return ()
         _ -> return ()
 
@@ -104,7 +104,7 @@ scrollDown count ui = do
     case buf of
         BufSearch ref -> do
             (cols, _) <- readIORef (scrSize ui)
-            forkIO $ Search.scrollDown (ref, lock) cols count
+            forkIO $ Search.scrollDown (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
             return ()
         _ -> return ()
 
@@ -113,7 +113,7 @@ selectPrev count ui = do
     (buf, lock) <- currentBuffer ui
     case buf of
         BufSearch ref -> do
-            forkIO $ Search.selectPrev (ref, lock) count
+            forkIO $ Search.selectPrev (ref, lock) count >> putMVar (uiEvent ui) Redraw
             return ()
         _ -> return ()
 
@@ -123,7 +123,7 @@ selectNext count ui = do
     case buf of
         BufSearch ref -> do
             (cols, _) <- readIORef (scrSize ui)
-            forkIO $ Search.selectNext (ref, lock) cols count
+            forkIO $ Search.selectNext (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
             return ()
         _ -> return ()
 
