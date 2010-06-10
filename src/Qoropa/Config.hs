@@ -39,6 +39,7 @@ import Graphics.Vty
     , bright_black, bright_white, bright_magenta, bright_blue, bright_yellow
     )
 
+import Qoropa.Util (beep)
 import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
     , redraw, exit
@@ -63,11 +64,15 @@ defaultSearchAttributes = Search.Attributes
 
 defaultSearchTheme :: Search.Theme
 defaultSearchTheme = Search.Theme
-    { Search.themeAttrs             = defaultSearchAttributes
-    , Search.themeEmptyFill         = "~"
-    , Search.themeDrawLine          = searchDrawLine
-    , Search.themeDrawStatusBar     = searchDrawStatusBar
-    , Search.themeDrawStatusMessage = searchDrawStatusMessage
+    { Search.themeAttrs              = defaultSearchAttributes
+    , Search.themeEmptyFill          = "~"
+    , Search.themeDrawLine           = searchDrawLine
+    , Search.themeDrawStatusBar      = searchDrawStatusBar
+    , Search.themeDrawStatusMessage  = searchDrawStatusMessage
+    , Search.themeFormatHitTheTop    = beep >> return "Hit the top!"
+    , Search.themeFormatHitTheBottom = beep >> return "Hit the bottom!"
+    , Search.themeFormatLoading      = (\term -> return $ "Loading " ++ term ++ " ...")
+    , Search.themeFormatLoadingDone  = (\term -> return $ "Done loading " ++ term)
     }
 
 searchDrawLine :: Search.Attributes -> Int -> Search.Line -> Image

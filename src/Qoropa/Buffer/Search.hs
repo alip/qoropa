@@ -47,7 +47,6 @@ import qualified Email.Notmuch as NM
     )
 
 import Qoropa.Notmuch (tagsToList)
-import Qoropa.Util    (beep)
 
 import Qoropa.Lock (Lock)
 import qualified Qoropa.Lock as Lock (with)
@@ -86,11 +85,15 @@ data Attributes = Attributes
     }
 
 data Theme = Theme
-    { themeAttrs             :: Attributes
-    , themeEmptyFill         :: String
-    , themeDrawLine          :: Attributes -> Int -> Line -> Image
-    , themeDrawStatusBar     :: Attributes -> StatusBar -> Image
-    , themeDrawStatusMessage :: Attributes -> StatusMessage -> Image
+    { themeAttrs              :: Attributes
+    , themeEmptyFill          :: String
+    , themeDrawLine           :: Attributes -> Int -> Line -> Image
+    , themeDrawStatusBar      :: Attributes -> StatusBar -> Image
+    , themeDrawStatusMessage  :: Attributes -> StatusMessage -> Image
+    , themeFormatHitTheTop    :: IO String
+    , themeFormatHitTheBottom :: IO String
+    , themeFormatLoading      :: String -> IO String
+    , themeFormatLoadingDone  :: String -> IO String
     }
 
 data Search = Search
@@ -160,8 +163,8 @@ scrollUp' ref count = do
                                 , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel - count + 1 }
                                 }
         else do
-            beep
-            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Hit the top!" }
+            msg <- themeFormatHitTheTop (bufferTheme buf)
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 
@@ -181,8 +184,8 @@ scrollDown' ref cols count = do
                                 , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel + count - 1}
                                 }
         else do
-            beep
-            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Hit the bottom!" }
+            msg <- themeFormatHitTheBottom (bufferTheme buf)
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 selectPrev :: (IORef Search, Lock) -> Int -> IO ()
@@ -201,8 +204,8 @@ selectPrev' ref count = do
                                }
             when (sel - count < first) $ scrollUp' ref count
         else do
-            beep
-            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Hit the top!" }
+            msg <- themeFormatHitTheTop (bufferTheme buf)
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 selectNext :: (IORef Search, Lock) -> Int -> Int -> IO ()
@@ -222,8 +225,8 @@ selectNext' ref cols count = do
                                }
             when (sel + count > lst) $ scrollDown' ref cols count
         else do
-            beep
-            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Hit the bottom!" }
+            msg <- themeFormatHitTheBottom (bufferTheme buf)
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 loadOne :: IORef Search -> NM.Thread -> IO ()
@@ -264,8 +267,9 @@ new :: (IORef Search, Lock) -> MVar UIEvent -> FilePath -> String -> IO ()
 new (ref, lock) mvar fp term = do
     Lock.with lock (do
         buf <- readIORef ref
+        msg <- (themeFormatLoading (bufferTheme buf)) term
         writeIORef ref buf { bufferStatusBar = (bufferStatusBar buf) { sBarTerm = term }
-                           , bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Loading " ++ term ++ " ..." }
+                           , bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
         putMVar mvar Redraw)
 
@@ -277,7 +281,8 @@ new (ref, lock) mvar fp term = do
 
     Lock.with lock (do
         buf <- readIORef ref
-        writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = "Done loading " ++ term }
+        msg <- (themeFormatLoadingDone (bufferTheme buf)) term
+        writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
         putMVar mvar Redraw)
 
