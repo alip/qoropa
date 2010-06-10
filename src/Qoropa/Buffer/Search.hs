@@ -310,4 +310,4 @@ queryThreads ui fp term = do
                                       }
         putMVar (uiEvent ui) RedrawSearch)
 
--- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :-- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :
+-- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :
