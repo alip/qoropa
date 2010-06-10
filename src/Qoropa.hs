@@ -21,7 +21,7 @@ module Qoropa
     ( module Qoropa.Config
     , module Qoropa.Util
     , module Qoropa.Notmuch
-    , module Qoropa.Search
+    , module Qoropa.Buffer
     , module Qoropa.UI
     , qoropa
     ) where
@@ -29,7 +29,7 @@ module Qoropa
 import Qoropa.Config
 import Qoropa.Util
 import Qoropa.Notmuch
-import Qoropa.Search
+import Qoropa.Buffer
 import Qoropa.UI
 
 import Control.Concurrent (forkIO)

@@ -15,7 +15,8 @@ library
         hs-source-dirs: src
 
         exposed-modules:
-                Qoropa.Search
+                Qoropa.Buffer.Search
+                Qoropa.Buffer
                 Qoropa.UI
                 Qoropa.Notmuch
                 Qoropa.Lock
@@ -36,7 +37,8 @@ executable qoropa
         main-is:        Main.hs
 
         other-modules:
-                Qoropa.Search
+                Qoropa.Buffer.Search
+                Qoropa.Buffer
                 Qoropa.UI
                 Qoropa.Notmuch
                 Qoropa.Lock

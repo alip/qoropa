@@ -41,11 +41,11 @@ import Graphics.Vty
     )
 
 import qualified Qoropa.Lock as Lock (Lock, new)
-import Qoropa.Search
+import Qoropa.Buffer
     ( SearchBar(..), SearchMsg(..), SearchWindow(..)
     , emptySearchWindow, paintSearchWindow
     )
-import qualified Qoropa.Search as S
+import qualified Qoropa.Buffer.Search as Search
 
 data UI = UI
     { vty           :: Vty
@@ -110,8 +110,8 @@ mainLoop ui = do
                         (EvKey (KASCII 'l') [MCtrl]) -> redraw ui
                         (EvKey (KASCII 'z') [MCtrl]) -> raiseSignal sigTSTP
                         (EvKey (KASCII 'q') []) -> exit ui
-                        (EvKey (KASCII 'j') []) -> forkIO (S.selectNext ui 1) >> return ()
-                        (EvKey (KASCII 'k') []) -> forkIO (S.selectPrev ui 1) >> return ()
+                        (EvKey (KASCII 'j') []) -> forkIO (Search.selectNext ui 1) >> return ()
+                        (EvKey (KASCII 'k') []) -> forkIO (Search.selectPrev ui 1) >> return ()
                         _ -> return ()
                 RedrawSearch -> redraw ui
                 Exit -> exit ui

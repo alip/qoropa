@@ -17,7 +17,7 @@
 - Author: Ali Polatel <alip@exherbo.org>
 -}
 
-module Qoropa.Search
+module Qoropa.Buffer.Search
     ( SearchAttr(..), SearchBar(..), SearchMsg(..), SearchLine(..), SearchWindow(..)
     , emptySearchWindow
     , scrollBackward, scrollForward

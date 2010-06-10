@@ -17,7 +17,7 @@
 - Author: Ali Polatel <alip@exherbo.org>
 -}
 
-module Qoropa.Search where
+module Qoropa.Buffer.Search where
 
 data SearchWindow
 
