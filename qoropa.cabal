@@ -1,0 +1,46 @@
+name:                qoropa
+version:             0.1
+synopsis:            Notmuch mail reader
+homepage:            http://github.com/alip/qoropa
+license:             GPL-2
+license-file:        LICENSE
+author:              Ali Polatel
+maintainer:          alip@exherbo.org
+category:            Email
+build-type:          Simple
+cabal-version:       >=1.2
+data-files:          README.mkd
+
+library
+        hs-source-dirs: src
+
+        exposed-modules:
+                Qoropa.Search
+                Qoropa.UI
+                Qoropa.Notmuch
+                Qoropa.Lock
+                Qoropa.Util
+                Qoropa.Config
+                Qoropa
+
+        build-depends:  directory, filepath, process, unix
+        build-depends:  base >=3 && < 5
+        build-depends:  mtl >=1.1 && < 1.2
+        build-depends:  MissingH >=1.0.0
+        build-depends:  notmuch >=0.1
+        build-depends:  utf8-string >= 0.3 && < 0.4
+        build-depends:  vty >=4.0.0 && < 5
+
+executable qoropa
+        hs-source-dirs: src
+        main-is:        Main.hs
+
+        other-modules:
+                Qoropa.Search
+                Qoropa.UI
+                Qoropa.Notmuch
+                Qoropa.Lock
+                Qoropa.Util
+                Qoropa.Config
+                Qoropa
+

@@ -1,0 +1,6 @@
+# .gitignore for Qoropa
+
+.*.swp
+*~
+
+/dist
