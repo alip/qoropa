@@ -19,12 +19,25 @@
 
 module Qoropa.Config
     ( QoropaConfig(..)
-    , defaultConfig
+    , defaultConfig, defaultKeys
+    , defaultSearchAttributes, defaultSearchTheme
+    , searchDrawLine, searchDrawStatusBar, searchDrawStatusMessage
     ) where
+
+import Data.String.Utils (join)
+import Text.Printf       (printf)
 
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Graphics.Vty (Event(..), Key(..), Modifier(..))
+
+import Graphics.Vty
+    ( Event(..), Key(..), Modifier(..), Image
+    , string, char
+    , horiz_cat
+    , def_attr, with_back_color, with_fore_color
+    , black, white, magenta, cyan
+    , bright_black, bright_white, bright_magenta, bright_blue, bright_yellow
+    )
 
 import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
@@ -32,11 +45,70 @@ import {-# SOURCE #-} Qoropa.UI
     , selectPrev, selectNext
     , scrollDown, scrollUp
     )
+import qualified Qoropa.Buffer.Search as Search
+    ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
+
+defaultSearchAttributes :: Search.Attributes
+defaultSearchAttributes = Search.Attributes
+    { Search.attrStatusBar      = def_attr `with_back_color` bright_white `with_fore_color` bright_blue
+    , Search.attrStatusMessage  = def_attr `with_back_color` black `with_fore_color` bright_yellow
+    , Search.attrSelected       = def_attr `with_back_color` cyan `with_fore_color` black
+    , Search.attrDefault        = def_attr `with_back_color` black `with_fore_color` white
+    , Search.attrEmpty          = def_attr `with_back_color` black `with_fore_color` cyan
+    , Search.attrTag            = def_attr `with_back_color` black `with_fore_color` magenta
+    , Search.attrSelectedTag    = def_attr `with_back_color` cyan `with_fore_color` bright_magenta
+    , Search.attrNumber         = def_attr `with_back_color` black `with_fore_color` bright_white
+    , Search.attrSelectedNumber = def_attr `with_back_color` cyan `with_fore_color` bright_black
+    }
+
+defaultSearchTheme :: Search.Theme
+defaultSearchTheme = Search.Theme
+    { Search.themeAttrs             = defaultSearchAttributes
+    , Search.themeEmptyFill         = "~"
+    , Search.themeDrawLine          = searchDrawLine
+    , Search.themeDrawStatusBar     = searchDrawStatusBar
+    , Search.themeDrawStatusMessage = searchDrawStatusMessage
+    }
+
+searchDrawLine :: Search.Attributes -> Int -> Search.Line -> Image
+searchDrawLine attr selected line =
+    horiz_cat [ string myNumberAttribute myNumberFormat
+              , char myDefaultAttribute ' '
+              , string myDefaultAttribute myDefaultFormat
+              , char myDefaultAttribute ' '
+              , string myTagAttribute myTagFormat
+              ]
+    where
+        myNumberAttribute  = if selected == Search.lineIndex line
+            then Search.attrSelectedNumber attr
+            else Search.attrNumber attr
+        myDefaultAttribute = if selected == Search.lineIndex line
+            then Search.attrSelected attr
+            else Search.attrDefault attr
+        myTagAttribute     = if selected == Search.lineIndex line
+            then Search.attrSelectedTag attr
+            else Search.attrTag attr
+        myNumberFormat     = printf " %d/%d" (Search.threadMatched line) (Search.threadTotal line)
+        myDefaultFormat    = printf "%s - %s" (Search.threadAuthors line) (Search.threadSubject line)
+        myTagFormat        = join " " $ map ('+' :) (Search.threadTags line)
+
+searchDrawStatusBar :: Search.Attributes -> Search.StatusBar -> Image
+searchDrawStatusBar attr bar =
+    string myAttribute myFormat
+    where
+        myAttribute = Search.attrStatusBar attr
+        myFormat  = Search.sBarTerm bar ++
+            " [" ++ show (Search.sBarCurrent bar) ++
+            "/" ++ show (Search.sBarTotal bar) ++ "]"
+
+searchDrawStatusMessage :: Search.Attributes -> Search.StatusMessage -> Image
+searchDrawStatusMessage attr msg = string (Search.attrStatusMessage attr) (Search.sMessage msg)
 
 data QoropaConfig = QoropaConfig
     { databasePath :: FilePath
     , folderList   :: [(String,String)]
     , keys         :: Map Event (UI -> IO ())
+    , themeSearch  :: Search.Theme
     }
 
 defaultKeys :: Map Event (UI -> IO ())
@@ -58,6 +130,7 @@ defaultConfig = QoropaConfig
     { databasePath = "~/.maildir"
     , folderList   = [("inbox", "tag:inbox")]
     , keys         = defaultKeys
+    , themeSearch  = defaultSearchTheme
     }
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

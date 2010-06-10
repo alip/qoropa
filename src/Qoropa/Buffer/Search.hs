@@ -28,18 +28,12 @@ module Qoropa.Buffer.Search
 import Control.Concurrent.MVar  (MVar, putMVar)
 import Control.Monad            (when)
 import Data.IORef               (IORef, readIORef, writeIORef)
-import Data.String.Utils        (join)
-import Text.Printf              (printf)
 
 import Codec.Binary.UTF8.String (decodeString)
 
 import Graphics.Vty
     ( Attr, Image, Picture
-    , def_attr, with_back_color, with_fore_color
-    , black, white, cyan, yellow
-    , bright_black, bright_white, bright_blue, bright_yellow
-    , char, string
-    , horiz_cat, vert_cat
+    , string, vert_cat
     , pic_for_image
     )
 
@@ -57,6 +51,7 @@ import Qoropa.Util    (beep)
 
 import Qoropa.Lock (Lock)
 import qualified Qoropa.Lock as Lock (with)
+
 import {-# SOURCE #-} Qoropa.UI (UIEvent(..))
 
 data Line = Line
@@ -107,28 +102,6 @@ data Search = Search
     , bufferTheme         :: Theme
     }
 
-defaultAttributes :: Attributes
-defaultAttributes = Attributes
-    { attrStatusBar      = def_attr `with_back_color` bright_white `with_fore_color` bright_blue
-    , attrStatusMessage  = def_attr `with_back_color` black `with_fore_color` bright_yellow
-    , attrSelected       = def_attr `with_back_color` cyan `with_fore_color` black
-    , attrDefault        = def_attr `with_back_color` black `with_fore_color` white
-    , attrEmpty          = def_attr `with_back_color` black `with_fore_color` cyan
-    , attrTag            = def_attr `with_back_color` black `with_fore_color` yellow
-    , attrSelectedTag    = def_attr `with_back_color` cyan `with_fore_color` bright_yellow
-    , attrNumber         = def_attr `with_back_color` black `with_fore_color` bright_white
-    , attrSelectedNumber = def_attr `with_back_color` cyan `with_fore_color` bright_black
-    }
-
-defaultTheme :: Theme
-defaultTheme = Theme
-    { themeAttrs             = defaultAttributes
-    , themeEmptyFill         = "~"
-    , themeDrawLine          = drawLine
-    , themeDrawStatusBar     = drawStatusBar
-    , themeDrawStatusMessage = drawStatusMessage
-    }
-
 emptyStatusBar :: StatusBar
 emptyStatusBar = StatusBar
     { sBarTerm    = ""
@@ -139,41 +112,15 @@ emptyStatusBar = StatusBar
 emptyStatusMessage :: StatusMessage
 emptyStatusMessage = StatusMessage { sMessage = " " }
 
-emptySearch :: Search
-emptySearch = Search
+emptySearch :: Theme -> Search
+emptySearch theme = Search
     { bufferFirst         = 1
     , bufferSelected      = 1
     , bufferLines         = []
     , bufferStatusBar     = emptyStatusBar
     , bufferStatusMessage = emptyStatusMessage
-    , bufferTheme         = defaultTheme
+    , bufferTheme         = theme
     }
-
-drawLine :: Attributes -> Int -> Line -> Image
-drawLine attr selected line =
-    horiz_cat [ string myNumberAttribute myNumberFormat
-              , char myDefaultAttribute ' '
-              , string myDefaultAttribute myDefaultFormat
-              , char myDefaultAttribute ' '
-              , string myTagAttribute myTagFormat
-              ]
-    where
-        myNumberAttribute  = if selected == lineIndex line then attrSelectedNumber attr else attrNumber attr
-        myDefaultAttribute = if selected == lineIndex line then attrSelected attr else attrDefault attr
-        myTagAttribute     = if selected == lineIndex line then attrSelectedTag attr else attrTag attr
-        myNumberFormat     = printf " %d/%d" (threadMatched line) (threadTotal line)
-        myDefaultFormat    = printf "%s - %s" (threadAuthors line) (threadSubject line)
-        myTagFormat        = join " " $ map ('+' :) (threadTags line)
-
-drawStatusBar :: Attributes -> StatusBar -> Image
-drawStatusBar attr bar =
-    string myAttribute myFormat
-    where
-        myAttribute = attrStatusBar attr
-        myFormat  = sBarTerm bar ++ " [" ++ show (sBarCurrent bar) ++ "/" ++ show (sBarTotal bar) ++ "]"
-
-drawStatusMessage :: Attributes -> StatusMessage -> Image
-drawStatusMessage attr msg = string (attrStatusMessage attr) (sMessage msg)
 
 paint :: Search -> Int -> Picture
 paint buf height =

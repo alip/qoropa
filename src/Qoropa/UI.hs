@@ -178,7 +178,7 @@ mainLoop conf ui = do
                                 Nothing -> return ()
                 NewSearch term -> do
                     sq <- readIORef (bufSeq ui)
-                    searchRef  <- newIORef Search.emptySearch
+                    searchRef  <- newIORef (Search.emptySearch (themeSearch conf))
                     searchLock <- Lock.new
                     writeIORef (bufSeq ui) (sq Seq.|> (BufSearch searchRef, searchLock))
                     writeIORef (bufCurrent ui) (Seq.length sq + 1)
