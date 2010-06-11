@@ -26,6 +26,7 @@ module Qoropa.Config
     , searchDrawLine, searchDrawStatusBar, searchDrawStatusMessage
     ) where
 
+import Data.List         (intersperse)
 import Data.String.Utils (join)
 import Text.Printf       (printf)
 
@@ -36,9 +37,10 @@ import Graphics.Vty
     ( Event(..), Key(..), Modifier(..), Image
     , string, char
     , horiz_cat
-    , def_attr, with_back_color, with_fore_color
-    , black, white, magenta, green, cyan, red
-    , bright_black, bright_white, bright_magenta, bright_blue, bright_yellow, bright_red
+    , def_attr, with_back_color, with_fore_color, with_style
+    , bold
+    , black, white, magenta, yellow, cyan, red, green, blue
+    , bright_blue, bright_yellow
     )
 
 import Qoropa.Util (beep)
@@ -56,19 +58,27 @@ import qualified Qoropa.Buffer.Search as Search
 
 defaultFolderAttributes :: Folder.Attributes
 defaultFolderAttributes = Folder.Attributes
-    { Folder.attrStatusBar      = def_attr `with_back_color` bright_white `with_fore_color` bright_blue
-    , Folder.attrStatusMessage  = def_attr `with_back_color` black `with_fore_color` bright_yellow
-    , Folder.attrSelected       = def_attr `with_back_color` green `with_fore_color` black
-    , Folder.attrDefault        = def_attr `with_back_color` black `with_fore_color` white
-    , Folder.attrCount          = def_attr `with_back_color` black `with_fore_color` red
-    , Folder.attrSelectedCount  = def_attr `with_back_color` green  `with_fore_color` bright_red
-    , Folder.attrEmpty          = def_attr `with_back_color` black `with_fore_color` cyan
+    { Folder.attrStatusBar     = def_attr `with_back_color` green `with_fore_color` black
+    , Folder.attrStatusMessage = def_attr `with_fore_color` bright_yellow
+    , Folder.attrFill          = def_attr `with_fore_color` cyan
+    , Folder.attrName          = ( def_attr `with_fore_color` white
+                                 , def_attr `with_back_color` yellow `with_fore_color` black
+                                 )
+    , Folder.attrTerm          = ( def_attr `with_fore_color` green
+                                 , def_attr `with_back_color` yellow `with_fore_color` bright_blue
+                                 )
+    , Folder.attrCount         = ( def_attr `with_fore_color` red
+                                 , def_attr `with_back_color` yellow `with_fore_color` blue
+                                 )
+    , Folder.attrDefault       = ( def_attr
+                                 , def_attr `with_back_color` yellow
+                                 )
     }
 
 defaultFolderTheme :: Folder.Theme
 defaultFolderTheme = Folder.Theme
     { Folder.themeAttrs              = defaultFolderAttributes
-    , Folder.themeEmptyFill          = "~"
+    , Folder.themeFill               = "~"
     , Folder.themeDrawLine           = folderDrawLine
     , Folder.themeDrawStatusBar      = folderDrawStatusBar
     , Folder.themeDrawStatusMessage  = folderDrawStatusMessage
@@ -80,26 +90,34 @@ defaultFolderTheme = Folder.Theme
 
 folderDrawLine :: Folder.Attributes -> Int -> Folder.Line -> Image
 folderDrawLine attr selected line =
-    horiz_cat [ string myDefaultAttribute myDefaultFormat
-              , string myDefaultAttribute "    "
-              , string myCountAttribute myCountFormat
-              ]
+    horiz_cat $ intersperse (char myDefaultAttribute ' ')
+        [ string myNameAttribute myNameFormat
+        , string myCountAttribute myCountFormat
+        , string myTermAttribute myTermFormat
+        ]
     where
-        myDefaultAttribute = if selected == Folder.lineIndex line
-            then Folder.attrSelected attr
-            else Folder.attrDefault attr
-        myCountAttribute = if selected == Folder.lineIndex line
-            then Folder.attrSelectedCount attr
-            else Folder.attrCount attr
-        myDefaultFormat = printf "%s ( %s )" (Folder.folderName line) (Folder.folderTerm line)
-        myCountFormat = show (Folder.folderCount line)
+        myDefaultAttribute = if selected /= Folder.lineIndex line
+            then fst $ Folder.attrDefault attr
+            else snd $ Folder.attrDefault attr
+        myNameAttribute = if selected /= Folder.lineIndex line
+            then fst $ Folder.attrName attr
+            else snd $ Folder.attrName attr
+        myTermAttribute = if selected /= Folder.lineIndex line
+            then fst $ Folder.attrTerm attr
+            else snd $ Folder.attrTerm attr
+        myCountAttribute = if selected /= Folder.lineIndex line
+            then fst $ Folder.attrCount attr
+            else snd $ Folder.attrCount attr
+        myNameFormat  = printf "%-20s" (Folder.folderName line)
+        myCountFormat = printf "%7d" (Folder.folderCount line)
+        myTermFormat  = (Folder.folderTerm line)
 
 folderDrawStatusBar :: Folder.Attributes -> Folder.StatusBar -> Image
 folderDrawStatusBar attr bar =
     string myAttribute myFormat
     where
         myAttribute = Folder.attrStatusBar attr
-        myFormat  =
+        myFormat  = "[Qoropa.Buffer.Folder] " ++
             "[" ++ show (Folder.sBarCurrent bar) ++
             "/" ++ show (Folder.sBarTotal bar) ++ "]"
 
@@ -109,21 +127,30 @@ folderDrawStatusMessage attr msg = string (Folder.attrStatusMessage attr) (Folde
 
 defaultSearchAttributes :: Search.Attributes
 defaultSearchAttributes = Search.Attributes
-    { Search.attrStatusBar      = def_attr `with_back_color` bright_white `with_fore_color` bright_blue
-    , Search.attrStatusMessage  = def_attr `with_back_color` black `with_fore_color` bright_yellow
-    , Search.attrSelected       = def_attr `with_back_color` green `with_fore_color` black
-    , Search.attrDefault        = def_attr `with_back_color` black `with_fore_color` white
-    , Search.attrEmpty          = def_attr `with_back_color` black `with_fore_color` cyan
-    , Search.attrTag            = def_attr `with_back_color` black `with_fore_color` magenta
-    , Search.attrSelectedTag    = def_attr `with_back_color` green `with_fore_color` bright_magenta
-    , Search.attrNumber         = def_attr `with_back_color` black `with_fore_color` bright_white
-    , Search.attrSelectedNumber = def_attr `with_back_color` green `with_fore_color` bright_black
+    { Search.attrStatusBar     = def_attr `with_back_color` green `with_fore_color` black
+    , Search.attrStatusMessage = def_attr `with_fore_color` bright_yellow
+    , Search.attrFill          = def_attr `with_fore_color` cyan
+    , Search.attrCount         = ( def_attr `with_fore_color` white
+                                 , def_attr `with_back_color` yellow `with_fore_color` black
+                                 )
+    , Search.attrAuthor        = ( def_attr `with_fore_color` green
+                                 , def_attr `with_back_color` yellow `with_fore_color` blue `with_style` bold
+                                 )
+    , Search.attrSubject       = ( def_attr `with_fore_color` white
+                                 , def_attr `with_back_color` yellow `with_fore_color` blue
+                                 )
+    , Search.attrTag           = ( def_attr `with_fore_color` magenta
+                                 , def_attr `with_back_color` yellow `with_fore_color` blue `with_style` bold
+                                 )
+    , Search.attrDefault       = ( def_attr
+                                 , def_attr `with_back_color` yellow
+                                 )
     }
 
 defaultSearchTheme :: Search.Theme
 defaultSearchTheme = Search.Theme
     { Search.themeAttrs              = defaultSearchAttributes
-    , Search.themeEmptyFill          = "~"
+    , Search.themeFill               = "~"
     , Search.themeDrawLine           = searchDrawLine
     , Search.themeDrawStatusBar      = searchDrawStatusBar
     , Search.themeDrawStatusMessage  = searchDrawStatusMessage
@@ -135,24 +162,31 @@ defaultSearchTheme = Search.Theme
 
 searchDrawLine :: Search.Attributes -> Int -> Search.Line -> Image
 searchDrawLine attr selected line =
-    horiz_cat [ string myNumberAttribute myNumberFormat
-              , char myDefaultAttribute ' '
-              , string myDefaultAttribute myDefaultFormat
-              , char myDefaultAttribute ' '
-              , string myTagAttribute myTagFormat
-              ]
+    horiz_cat $ intersperse (char myDefaultAttribute ' ')
+        [ string myCountAttribute myCountFormat
+        , string myAuthorAttribute myAuthorFormat
+        , string mySubjectAttribute mySubjectFormat
+        , string myTagAttribute myTagFormat
+        ]
     where
-        myNumberAttribute  = if selected == Search.lineIndex line
-            then Search.attrSelectedNumber attr
-            else Search.attrNumber attr
-        myDefaultAttribute = if selected == Search.lineIndex line
-            then Search.attrSelected attr
-            else Search.attrDefault attr
-        myTagAttribute     = if selected == Search.lineIndex line
-            then Search.attrSelectedTag attr
-            else Search.attrTag attr
-        myNumberFormat     = printf " %d/%d" (Search.threadMatched line) (Search.threadTotal line)
-        myDefaultFormat    = printf "%s - %s" (Search.threadAuthors line) (Search.threadSubject line)
+        myDefaultAttribute = if selected /= Search.lineIndex line
+            then fst $ Search.attrDefault attr
+            else snd $ Search.attrDefault attr
+        myCountAttribute   = if selected /= Search.lineIndex line
+            then fst $ Search.attrCount attr
+            else snd $ Search.attrCount attr
+        myAuthorAttribute  = if selected /= Search.lineIndex line
+            then fst $ Search.attrAuthor attr
+            else snd $ Search.attrAuthor attr
+        mySubjectAttribute = if selected /= Search.lineIndex line
+            then fst $ Search.attrSubject attr
+            else snd $ Search.attrSubject attr
+        myTagAttribute     = if selected /= Search.lineIndex line
+            then fst $ Search.attrTag attr
+            else snd $ Search.attrTag attr
+        myCountFormat      = printf "[%3d/%-3d]" (Search.threadMatched line) (Search.threadTotal line)
+        myAuthorFormat     = printf "%-10s" (Search.threadAuthors line)
+        mySubjectFormat    = printf "%-20s" (Search.threadSubject line)
         myTagFormat        = join " " $ map ('+' :) (Search.threadTags line)
 
 searchDrawStatusBar :: Search.Attributes -> Search.StatusBar -> Image
@@ -160,7 +194,8 @@ searchDrawStatusBar attr bar =
     string myAttribute myFormat
     where
         myAttribute = Search.attrStatusBar attr
-        myFormat  = Search.sBarTerm bar ++
+        myFormat  = "[Qoropa.Buffer.Search] " ++
+            Search.sBarTerm bar ++
             " [" ++ show (Search.sBarCurrent bar) ++
             "/" ++ show (Search.sBarTotal bar) ++ "]"
 

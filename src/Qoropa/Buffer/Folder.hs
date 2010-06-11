@@ -49,16 +49,16 @@ import {-# SOURCE #-} Qoropa.UI (UIEvent(..))
 data Attributes = Attributes
     { attrStatusBar     :: Attr
     , attrStatusMessage :: Attr
-    , attrSelected      :: Attr
-    , attrDefault       :: Attr
-    , attrCount         :: Attr
-    , attrSelectedCount :: Attr
-    , attrEmpty         :: Attr
+    , attrFill          :: Attr
+    , attrName          :: (Attr, Attr)
+    , attrTerm          :: (Attr, Attr)
+    , attrCount         :: (Attr, Attr)
+    , attrDefault       :: (Attr, Attr)
     }
 
 data Theme = Theme
     { themeAttrs              :: Attributes
-    , themeEmptyFill          :: String
+    , themeFill               :: String
     , themeDrawLine           :: Attributes -> Int -> Line -> Image
     , themeDrawStatusBar      :: Attributes -> StatusBar -> Image
     , themeDrawStatusMessage  :: Attributes -> StatusMessage -> Image
@@ -131,7 +131,7 @@ paint buf height =
 
         len = length lns
         fill  = if len < height - 2
-            then replicate (height - 2 - len) (string (attrEmpty myAttr) (themeEmptyFill myTheme))
+            then replicate (height - 2 - len) (string (attrFill myAttr) (themeFill myTheme))
             else []
 
         bar   = myDrawStatusBar myAttr (bufferStatusBar buf)
