@@ -265,15 +265,16 @@ load (ref, lock) mvar db ((name, term):xs) = do
     count <- NM.queryCountMessages query
     NM.queryDestroy query
 
-    Lock.with lock $ do
-        loadOne ref (name, term) count
+    when (count > 0) $
+        Lock.with lock $ do
+            loadOne ref (name, term) count
 
-        buf <- readIORef ref
-        msg <- (themeFormatLoadingDone (bufferTheme buf)) (name, term)
-        writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
-                           }
+            buf <- readIORef ref
+            msg <- (themeFormatLoadingDone (bufferTheme buf)) (name, term)
+            writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
+                               }
 
-        putMVar mvar Redraw
+            putMVar mvar Redraw
 
     cancelled <- isCancelledLoad ref
     unless cancelled $ load (ref, lock) mvar db xs
