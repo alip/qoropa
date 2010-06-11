@@ -48,6 +48,12 @@ import Graphics.Vty
 import Qoropa.Lock (Lock)
 import qualified Qoropa.Lock as Lock (new)
 
+import qualified Qoropa.Buffer.Folder as Folder
+    ( emptyFolder, paint, new
+    , scrollUp, scrollDown
+    , selectNext, selectPrev
+    )
+
 import qualified Qoropa.Buffer.Search as Search
     ( emptySearch, paint, new
     , scrollUp, scrollDown
@@ -68,6 +74,7 @@ data UI = UI
     }
 
 data UIEvent = VtyEvent Event
+               | NewFolder
                | NewSearch String
                | Redraw
                | Exit
@@ -81,18 +88,24 @@ currentBuffer ui = do
 redraw :: UI -> IO ()
 redraw ui = do
     (buf, _) <- currentBuffer ui
+    (cols, _) <- readIORef (scrSize ui)
 
     case buf of
+        BufFolder ref -> do
+            rbuf <- readIORef ref
+            update (vty ui) $ Folder.paint rbuf cols
         BufSearch ref -> do
-            sbuf <- readIORef ref
-            (cols, _) <- readIORef (scrSize ui)
-            update (vty ui) $ Search.paint sbuf cols
+            rbuf <- readIORef ref
+            update (vty ui) $ Search.paint rbuf cols
         _ -> return ()
 
 scrollUp :: Int -> UI -> IO ()
 scrollUp count ui = do
     (buf, lock) <- currentBuffer ui
     case buf of
+        BufFolder ref -> do
+            forkIO $ Folder.scrollUp (ref, lock) count >> putMVar (uiEvent ui) Redraw
+            return ()
         BufSearch ref -> do
             forkIO $ Search.scrollUp (ref, lock) count >> putMVar (uiEvent ui) Redraw
             return ()
@@ -101,9 +114,12 @@ scrollUp count ui = do
 scrollDown :: Int -> UI -> IO ()
 scrollDown count ui = do
     (buf, lock) <- currentBuffer ui
+    (cols, _) <- readIORef (scrSize ui)
     case buf of
+        BufFolder ref -> do
+            forkIO $ Folder.scrollDown (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
+            return ()
         BufSearch ref -> do
-            (cols, _) <- readIORef (scrSize ui)
             forkIO $ Search.scrollDown (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
             return ()
         _ -> return ()
@@ -112,6 +128,9 @@ selectPrev :: Int -> UI -> IO ()
 selectPrev count ui = do
     (buf, lock) <- currentBuffer ui
     case buf of
+        BufFolder ref -> do
+            forkIO $ Folder.selectPrev (ref, lock) count >> putMVar (uiEvent ui) Redraw
+            return ()
         BufSearch ref -> do
             forkIO $ Search.selectPrev (ref, lock) count >> putMVar (uiEvent ui) Redraw
             return ()
@@ -120,9 +139,12 @@ selectPrev count ui = do
 selectNext :: Int -> UI -> IO ()
 selectNext count ui = do
     (buf, lock) <- currentBuffer ui
+    (cols, _) <- readIORef (scrSize ui)
     case buf of
+        BufFolder ref -> do
+            forkIO $ Folder.selectNext (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
+            return ()
         BufSearch ref -> do
-            (cols, _) <- readIORef (scrSize ui)
             forkIO $ Search.selectNext (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
             return ()
         _ -> return ()
@@ -161,7 +183,7 @@ exit ui = do
 mainLoop :: QoropaConfig -> UI -> IO ()
 mainLoop conf ui = do
     path <- expandTilde (databasePath conf)
-    putMVar (uiEvent ui) $ NewSearch "tag:inbox"
+    putMVar (uiEvent ui) $ NewFolder
     eventLoop path
     where
         eventLoop :: FilePath -> IO ()
@@ -176,6 +198,14 @@ mainLoop conf ui = do
                             case Map.lookup e (keys conf) of
                                 Just f -> f ui
                                 Nothing -> return ()
+                NewFolder -> do
+                    sq <- readIORef (bufSeq ui)
+                    folderRef  <- newIORef (Folder.emptyFolder (themeFolder conf))
+                    folderLock <- Lock.new
+                    writeIORef (bufSeq ui) (sq Seq.|> (BufFolder folderRef, folderLock))
+                    writeIORef (bufCurrent ui) (Seq.length sq + 1)
+                    forkIO $ Folder.new (folderRef, folderLock) (uiEvent ui) path (folderList conf)
+                    return ()
                 NewSearch term -> do
                     sq <- readIORef (bufSeq ui)
                     searchRef  <- newIORef (Search.emptySearch (themeSearch conf))

@@ -16,6 +16,7 @@ library
         hs-source-dirs: src
 
         exposed-modules:
+                Qoropa.Buffer.Folder
                 Qoropa.Buffer.Search
                 Qoropa.Buffer
                 Qoropa.UI
@@ -42,6 +43,7 @@ executable qoropa
         ghc-options: -Wall
 
         other-modules:
+                Qoropa.Buffer.Folder
                 Qoropa.Buffer.Search
                 Qoropa.Buffer
                 Qoropa.UI

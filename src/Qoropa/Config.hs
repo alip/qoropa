@@ -20,6 +20,8 @@
 module Qoropa.Config
     ( QoropaConfig(..)
     , defaultConfig, defaultKeys
+    , defaultFolderAttributes, defaultFolderTheme
+    , folderDrawLine, folderDrawStatusBar, folderDrawStatusMessage
     , defaultSearchAttributes, defaultSearchTheme
     , searchDrawLine, searchDrawStatusBar, searchDrawStatusMessage
     ) where
@@ -35,8 +37,8 @@ import Graphics.Vty
     , string, char
     , horiz_cat
     , def_attr, with_back_color, with_fore_color
-    , black, white, magenta, cyan
-    , bright_black, bright_white, bright_magenta, bright_blue, bright_yellow
+    , black, white, magenta, green, cyan, red
+    , bright_black, bright_white, bright_magenta, bright_blue, bright_yellow, bright_red
     )
 
 import Qoropa.Util (beep)
@@ -45,20 +47,76 @@ import {-# SOURCE #-} Qoropa.UI
     , redraw, exit
     , selectPrev, selectNext
     )
+
+import qualified Qoropa.Buffer.Folder as Folder
+    ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
 import qualified Qoropa.Buffer.Search as Search
     ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
+
+defaultFolderAttributes :: Folder.Attributes
+defaultFolderAttributes = Folder.Attributes
+    { Folder.attrStatusBar      = def_attr `with_back_color` bright_white `with_fore_color` bright_blue
+    , Folder.attrStatusMessage  = def_attr `with_back_color` black `with_fore_color` bright_yellow
+    , Folder.attrSelected       = def_attr `with_back_color` green `with_fore_color` black
+    , Folder.attrDefault        = def_attr `with_back_color` black `with_fore_color` white
+    , Folder.attrCount          = def_attr `with_back_color` black `with_fore_color` red
+    , Folder.attrSelectedCount  = def_attr `with_back_color` green  `with_fore_color` bright_red
+    , Folder.attrEmpty          = def_attr `with_back_color` black `with_fore_color` cyan
+    }
+
+defaultFolderTheme :: Folder.Theme
+defaultFolderTheme = Folder.Theme
+    { Folder.themeAttrs              = defaultFolderAttributes
+    , Folder.themeEmptyFill          = "~"
+    , Folder.themeDrawLine           = folderDrawLine
+    , Folder.themeDrawStatusBar      = folderDrawStatusBar
+    , Folder.themeDrawStatusMessage  = folderDrawStatusMessage
+    , Folder.themeFormatHitTheTop    = beep >> return "Hit the top!"
+    , Folder.themeFormatHitTheBottom = beep >> return "Hit the bottom!"
+    , Folder.themeFormatLoading      = (\(name, term) -> return $ "Loading " ++ name ++ " ( " ++ term ++ " )...")
+    , Folder.themeFormatLoadingDone  = (\(name, term) -> return $ "Done loading " ++ name ++ " ( " ++ term ++ " )")
+    }
+
+folderDrawLine :: Folder.Attributes -> Int -> Folder.Line -> Image
+folderDrawLine attr selected line =
+    horiz_cat [ string myDefaultAttribute myDefaultFormat
+              , string myDefaultAttribute "    "
+              , string myCountAttribute myCountFormat
+              ]
+    where
+        myDefaultAttribute = if selected == Folder.lineIndex line
+            then Folder.attrSelected attr
+            else Folder.attrDefault attr
+        myCountAttribute = if selected == Folder.lineIndex line
+            then Folder.attrSelectedCount attr
+            else Folder.attrCount attr
+        myDefaultFormat = printf "%s ( %s )" (Folder.folderName line) (Folder.folderTerm line)
+        myCountFormat = show (Folder.folderCount line)
+
+folderDrawStatusBar :: Folder.Attributes -> Folder.StatusBar -> Image
+folderDrawStatusBar attr bar =
+    string myAttribute myFormat
+    where
+        myAttribute = Folder.attrStatusBar attr
+        myFormat  =
+            "[" ++ show (Folder.sBarCurrent bar) ++
+            "/" ++ show (Folder.sBarTotal bar) ++ "]"
+
+
+folderDrawStatusMessage :: Folder.Attributes -> Folder.StatusMessage -> Image
+folderDrawStatusMessage attr msg = string (Folder.attrStatusMessage attr) (Folder.sMessage msg)
 
 defaultSearchAttributes :: Search.Attributes
 defaultSearchAttributes = Search.Attributes
     { Search.attrStatusBar      = def_attr `with_back_color` bright_white `with_fore_color` bright_blue
     , Search.attrStatusMessage  = def_attr `with_back_color` black `with_fore_color` bright_yellow
-    , Search.attrSelected       = def_attr `with_back_color` cyan `with_fore_color` black
+    , Search.attrSelected       = def_attr `with_back_color` green `with_fore_color` black
     , Search.attrDefault        = def_attr `with_back_color` black `with_fore_color` white
     , Search.attrEmpty          = def_attr `with_back_color` black `with_fore_color` cyan
     , Search.attrTag            = def_attr `with_back_color` black `with_fore_color` magenta
-    , Search.attrSelectedTag    = def_attr `with_back_color` cyan `with_fore_color` bright_magenta
+    , Search.attrSelectedTag    = def_attr `with_back_color` green `with_fore_color` bright_magenta
     , Search.attrNumber         = def_attr `with_back_color` black `with_fore_color` bright_white
-    , Search.attrSelectedNumber = def_attr `with_back_color` cyan `with_fore_color` bright_black
+    , Search.attrSelectedNumber = def_attr `with_back_color` green `with_fore_color` bright_black
     }
 
 defaultSearchTheme :: Search.Theme
@@ -113,6 +171,7 @@ data QoropaConfig = QoropaConfig
     , folderList   :: [(String,String)]
     , keys         :: Map Event (UI -> IO ())
     , themeSearch  :: Search.Theme
+    , themeFolder  :: Folder.Theme
     }
 
 defaultKeys :: Map Event (UI -> IO ())
@@ -131,6 +190,7 @@ defaultConfig = QoropaConfig
     , folderList   = [("inbox", "tag:inbox")]
     , keys         = defaultKeys
     , themeSearch  = defaultSearchTheme
+    , themeFolder  = defaultFolderTheme
     }
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

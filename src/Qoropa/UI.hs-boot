@@ -43,6 +43,7 @@ data UI = UI
     }
 
 data UIEvent = VtyEvent Event
+               | NewFolder
                | NewSearch String
                | Redraw
                | Exit
