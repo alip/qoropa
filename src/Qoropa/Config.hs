@@ -44,7 +44,6 @@ import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
     , redraw, exit
     , selectPrev, selectNext
-    , scrollDown, scrollUp
     )
 import qualified Qoropa.Buffer.Search as Search
     ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
@@ -124,10 +123,6 @@ defaultKeys = Map.fromList
     , ( EvKey (KASCII 'k') [],      selectPrev 1  )
     , ( EvKey KUp [],               selectPrev 1  )
     , ( EvKey KDown [],             selectNext 1  )
-    , ( EvKey KPageUp [],           selectPrev 10 )
-    , ( EvKey KPageDown [],         selectNext 10 )
-    , ( EvKey (KASCII 'n') [],      scrollDown 1  )
-    , ( EvKey (KASCII 'o') [],      scrollUp 1    )
     ]
 
 defaultConfig :: QoropaConfig
