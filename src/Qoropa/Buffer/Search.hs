@@ -28,6 +28,7 @@ module Qoropa.Buffer.Search
 import Control.Concurrent.MVar  (MVar, newEmptyMVar, putMVar, tryTakeMVar, tryPutMVar)
 import Control.Monad            (when, unless)
 import Data.IORef               (IORef, readIORef, writeIORef)
+import Foreign.C.Types          (CTime)
 
 import Codec.Binary.UTF8.String (decodeString)
 
@@ -43,10 +44,12 @@ import qualified Email.Notmuch as NM
     , Threads, threadsValid, threadsGet, threadsMoveToNext
     , Thread, threadMatchedMessages, threadTotalMessages
     , threadAuthors, threadSubject, threadTags, threadDestroy
+    , threadOldestDate, threadNewestDate
     , tagsDestroy
     )
 
 import Qoropa.Notmuch (tagsToList)
+import Qoropa.Util    (relativeTime)
 
 import Qoropa.Lock (Lock)
 import qualified Qoropa.Lock as Lock (with)
@@ -54,12 +57,14 @@ import qualified Qoropa.Lock as Lock (with)
 import {-# SOURCE #-} Qoropa.UI (UIEvent(..))
 
 data Line = Line
-    { lineIndex      :: Int
-    , threadMatched  :: Integer
-    , threadTotal    :: Integer
-    , threadAuthors  :: String
-    , threadSubject  :: String
-    , threadTags     :: [String]
+    { lineIndex        :: Int
+    , threadOldestDate :: (CTime, String)
+    , threadNewestDate :: (CTime, String)
+    , threadMatched    :: Integer
+    , threadTotal      :: Integer
+    , threadAuthors    :: String
+    , threadSubject    :: String
+    , threadTags       :: [String]
     }
 
 data StatusBar = StatusBar
@@ -76,6 +81,7 @@ data Attributes = Attributes
     { attrStatusBar     :: Attr
     , attrStatusMessage :: Attr
     , attrFill          :: Attr
+    , attrTime          :: (Attr, Attr)
     , attrCount         :: (Attr, Attr)
     , attrAuthor        :: (Attr, Attr)
     , attrSubject       :: (Attr, Attr)
@@ -250,21 +256,28 @@ loadOne ref t = do
     buf <- readIORef ref
     let len = length $ bufferLines buf
 
-    matched <- NM.threadMatchedMessages t
-    total <- NM.threadTotalMessages t
-    authors <- NM.threadAuthors t
-    subject <- NM.threadSubject t
+    matched    <- NM.threadMatchedMessages t
+    total      <- NM.threadTotalMessages t
+    authors    <- NM.threadAuthors t
+    subject    <- NM.threadSubject t
+    oldestDate <- NM.threadOldestDate t
+    newestDate <- NM.threadNewestDate t
 
     tags <- NM.threadTags t
     taglist <- tagsToList tags
     NM.tagsDestroy tags
 
-    let line = Line { lineIndex      = len + 1
-                    , threadMatched  = matched
-                    , threadTotal    = total
-                    , threadAuthors  = decodeString authors
-                    , threadSubject  = decodeString subject
-                    , threadTags     = taglist
+    oldestDateRelative <- relativeTime oldestDate
+    newestDateRelative <- relativeTime newestDate
+
+    let line = Line { lineIndex        = len + 1
+                    , threadOldestDate = (oldestDate, oldestDateRelative)
+                    , threadNewestDate = (newestDate, newestDateRelative)
+                    , threadMatched    = matched
+                    , threadTotal      = total
+                    , threadAuthors    = decodeString authors
+                    , threadSubject    = decodeString subject
+                    , threadTags       = taglist
                     }
 
     writeIORef ref buf { bufferLines     = bufferLines buf ++ [line]

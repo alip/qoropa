@@ -28,7 +28,7 @@ library
 
         ghc-options: -Wall
 
-        build-depends:  containers, directory, filepath, process, unix
+        build-depends:  containers, directory, filepath, old-locale, process, time, unix
         build-depends:  base >=3 && < 5
         build-depends:  mtl >=1.1 && < 1.2
         build-depends:  MissingH >=1.0.0

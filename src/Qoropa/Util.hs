@@ -1,8 +1,11 @@
+{-# LANGUAGE BangPatterns, ScopedTypeVariables #-}
 {-
 - Qoropa -- Love Your Mail!
 - Copyright © 2010 Ali Polatel
 - Based in part upon XMonad which is:
 -   Copyright (c) 2007 Spencer Janssen
+- Based in part upon gregorycollins/homepage which is:
+-   Copyright (C) 2009 Gregory Collins
 -
 - This file is part of the Qoropa mail reader. Qoropa is free software;
 - you can redistribute it and/or modify it under the terms of the GNU General
@@ -23,6 +26,7 @@ module Qoropa.Util
     ( beep
     , expandTilde
     , getQoropaDir
+    , relativeTime
     , recompile
     ) where
 
@@ -31,6 +35,17 @@ import Control.Applicative   ((<$>))
 import Control.Exception     (catch, bracket, SomeException(..))
 import Control.Monad         (filterM)
 import Data.List             ((\\))
+
+import Data.Char             (isSpace)
+import Data.Time
+    ( TimeZone, UTCTime, NominalDiffTime
+    , diffUTCTime, utcToLocalTime, formatTime
+    , getCurrentTime, getCurrentTimeZone
+    )
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
+import Foreign.C.Types       (CTime)
+import System.Locale         (defaultTimeLocale)
+
 import System.Exit           (ExitCode(..))
 import System.IO             (openFile, IOMode(..), hClose)
 import System.Info           (arch, os)
@@ -53,6 +68,63 @@ expandTilde f = return f
 
 getQoropaDir :: IO FilePath
 getQoropaDir = getAppUserDataDirectory "qoropa"
+
+humanReadableTimeDiff :: TimeZone -> UTCTime -> UTCTime -> String
+humanReadableTimeDiff tz curTime oldTime =
+    helper diff
+    where
+        diff    = diffUTCTime curTime oldTime
+
+        minutes :: NominalDiffTime -> Double
+        minutes n = realToFrac $ n / 60
+
+        hours :: NominalDiffTime -> Double
+        hours   n = (minutes n) / 60
+
+        days :: NominalDiffTime -> Double
+        days    n = (hours n) / 24
+
+        weeks :: NominalDiffTime -> Double
+        weeks   n = (days n) / 7
+
+        years :: NominalDiffTime -> Double
+        years   n = (days n) / 365
+
+        i2s :: RealFrac a => a -> String
+        i2s !n = show m
+            where
+                m :: Int
+                m = truncate n
+
+        old = utcToLocalTime tz oldTime
+
+        trim = f . f
+            where f = reverse . dropWhile isSpace
+
+        dow           = trim $! formatTime defaultTimeLocale "%l:%M %p on %A" old
+        thisYear      = trim $! formatTime defaultTimeLocale "%b %e" old
+        previousYears = trim $! formatTime defaultTimeLocale "%b %e, %Y" old
+
+        helper !d | d < 1          = "One second ago"
+                  | d < 60         = i2s d ++ " seconds ago"
+                  | minutes d < 2  = "One minute ago"
+                  | minutes d < 60 = i2s (minutes d) ++ " minutes ago"
+                  | hours d < 2    = "One hour ago"
+                  | hours d < 24   = i2s (hours d) ++ " hours ago"
+                  | days d < 5     = dow
+                  | days d < 10    = i2s (days d)  ++ " days ago"
+                  | weeks d < 2    = i2s (weeks d) ++ " week ago"
+                  | weeks d < 5    = i2s (weeks d)  ++ " weeks ago"
+                  | years d < 1    = thisYear
+                  | otherwise      = previousYears
+
+relativeTime :: CTime -> IO String
+relativeTime t = do
+    tz  <- getCurrentTimeZone
+    now <- getCurrentTime
+    return $ humanReadableTimeDiff tz now old
+    where
+        old = posixSecondsToUTCTime $ realToFrac t
 
 recompile :: Bool -> IO Bool
 recompile force = do

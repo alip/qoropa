@@ -130,6 +130,9 @@ defaultSearchAttributes = Search.Attributes
     { Search.attrStatusBar     = def_attr `with_back_color` green `with_fore_color` black
     , Search.attrStatusMessage = def_attr `with_fore_color` bright_yellow
     , Search.attrFill          = def_attr `with_fore_color` cyan
+    , Search.attrTime          = ( def_attr `with_fore_color` white
+                                 , def_attr `with_back_color` yellow `with_fore_color` black
+                                 )
     , Search.attrCount         = ( def_attr `with_fore_color` white
                                  , def_attr `with_back_color` yellow `with_fore_color` black
                                  )
@@ -163,7 +166,8 @@ defaultSearchTheme = Search.Theme
 searchDrawLine :: Search.Attributes -> Int -> Search.Line -> Image
 searchDrawLine attr selected line =
     horiz_cat $ intersperse (char myDefaultAttribute ' ')
-        [ string myCountAttribute myCountFormat
+        [ string myTimeAttribute myTimeFormat
+        , string myCountAttribute myCountFormat
         , string myAuthorAttribute myAuthorFormat
         , string mySubjectAttribute mySubjectFormat
         , string myTagAttribute myTagFormat
@@ -172,6 +176,9 @@ searchDrawLine attr selected line =
         myDefaultAttribute = if selected /= Search.lineIndex line
             then fst $ Search.attrDefault attr
             else snd $ Search.attrDefault attr
+        myTimeAttribute = if selected /= Search.lineIndex line
+            then fst $ Search.attrTime attr
+            else snd $ Search.attrTime attr
         myCountAttribute   = if selected /= Search.lineIndex line
             then fst $ Search.attrCount attr
             else snd $ Search.attrCount attr
@@ -184,7 +191,8 @@ searchDrawLine attr selected line =
         myTagAttribute     = if selected /= Search.lineIndex line
             then fst $ Search.attrTag attr
             else snd $ Search.attrTag attr
-        myCountFormat      = printf "[%3d/%-3d]" (Search.threadMatched line) (Search.threadTotal line)
+        myTimeFormat       = printf "%-s" (snd $ Search.threadNewestDate line)
+        myCountFormat      = printf "[%d/%-d]" (Search.threadMatched line) (Search.threadTotal line)
         myAuthorFormat     = printf "%-10s" (Search.threadAuthors line)
         mySubjectFormat    = printf "%-20s" (Search.threadSubject line)
         myTagFormat        = join " " $ map ('+' :) (Search.threadTags line)
