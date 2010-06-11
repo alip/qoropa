@@ -26,6 +26,7 @@ module Qoropa.Config
     , searchDrawLine, searchDrawStatusBar, searchDrawStatusMessage
     ) where
 
+import Data.Char         (chr)
 import Data.List         (intersperse)
 import Data.String.Utils (join)
 import Text.Printf       (printf)
@@ -49,6 +50,7 @@ import {-# SOURCE #-} Qoropa.UI
     , redraw, exit
     , selectPrev, selectNext
     , openSelected, cancelOperation
+    , switchBuffer, switchBufferNext, switchBufferPrev
     )
 
 import qualified Qoropa.Buffer.Folder as Folder
@@ -219,16 +221,20 @@ data QoropaConfig = QoropaConfig
     }
 
 defaultKeys :: Map Event (UI -> IO ())
-defaultKeys = Map.fromList
-    [ ( EvKey (KASCII 'l') [MCtrl], redraw          )
-    , ( EvKey (KASCII 'q') [],      exit            )
-    , ( EvKey (KASCII 'j') [],      selectNext 1    )
-    , ( EvKey (KASCII 'k') [],      selectPrev 1    )
-    , ( EvKey KUp [],               selectPrev 1    )
-    , ( EvKey KDown [],             selectNext 1    )
-    , ( EvKey KEnter [],            openSelected    )
-    , ( EvKey (KASCII 'c') [MCtrl], cancelOperation )
-    ]
+defaultKeys = Map.fromList $
+    [ ( EvKey (KASCII 'l') [MCtrl], redraw           )
+    , ( EvKey (KASCII 'q') [],      exit             )
+    , ( EvKey (KASCII 'j') [],      selectNext 1     )
+    , ( EvKey (KASCII 'k') [],      selectPrev 1     )
+    , ( EvKey KUp [],               selectPrev 1     )
+    , ( EvKey KDown [],             selectNext 1     )
+    , ( EvKey KEnter [],            openSelected     )
+    , ( EvKey (KASCII 'c') [MCtrl], cancelOperation  )
+    , ( EvKey (KASCII 'j') [MCtrl], switchBufferNext )
+    , ( EvKey (KASCII 'k') [MCtrl], switchBufferPrev )
+    ] ++
+    -- Alt-[1..9], Switch to buffer N
+    map (\i -> (EvKey (KASCII $ chr $ i + 48) [MMeta], switchBuffer i)) [1..9]
 
 defaultConfig :: QoropaConfig
 defaultConfig = QoropaConfig

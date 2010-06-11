@@ -26,6 +26,7 @@ module Qoropa.UI
     , currentBuffer, redraw
     , scrollUp, scrollDown, selectPrev, selectNext
     , openSelected, cancelOperation
+    , switchBuffer, switchBufferNext, switchBufferPrev
     ) where
 
 import Control.Concurrent       (ThreadId, forkIO, myThreadId)
@@ -86,6 +87,24 @@ currentBuffer ui = do
     sq <- readIORef (bufSeq ui)
     cur <- readIORef (bufCurrent ui)
     return $ Seq.index sq (cur - 1)
+
+switchBuffer :: Int -> UI -> IO ()
+switchBuffer to ui = do
+    sq <- readIORef (bufSeq ui)
+
+    if to < 1 || to > Seq.length sq
+        then beep
+        else writeIORef (bufCurrent ui) to >> redraw ui
+
+switchBufferNext :: UI -> IO ()
+switchBufferNext ui = do
+    cur <- readIORef (bufCurrent ui)
+    switchBuffer (cur + 1) ui
+
+switchBufferPrev :: UI -> IO ()
+switchBufferPrev ui = do
+    cur <- readIORef (bufCurrent ui)
+    switchBuffer (cur - 1) ui
 
 redraw :: UI -> IO ()
 redraw ui = do
