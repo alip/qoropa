@@ -25,7 +25,7 @@ module Qoropa.UI
     , start, exit, mainLoop
     , currentBuffer, redraw
     , scrollUp, scrollDown, selectPrev, selectNext
-    , openSelected
+    , openSelected, cancelOperation
     ) where
 
 import Control.Concurrent       (ThreadId, forkIO, myThreadId)
@@ -57,7 +57,7 @@ import qualified Qoropa.Buffer.Folder as Folder
     )
 
 import qualified Qoropa.Buffer.Search as Search
-    ( emptySearch, paint, new
+    ( emptySearch, paint, new, cancelLoad
     , scrollUp, scrollDown
     , selectNext, selectPrev
     )
@@ -162,6 +162,14 @@ openSelected ui = do
             return ()
         _ -> beep
 
+cancelOperation :: UI -> IO ()
+cancelOperation ui = do
+    (buf, _) <- currentBuffer ui
+    case buf of
+        BufSearch ref -> do
+            Search.cancelLoad ref
+        _ -> beep
+
 start :: IO UI
 start = do
     tid          <- myThreadId
@@ -221,7 +229,8 @@ mainLoop conf ui = do
                     return ()
                 NewSearch term -> do
                     sq <- readIORef (bufSeq ui)
-                    searchRef  <- newIORef (Search.emptySearch (themeSearch conf))
+                    es <- Search.emptySearch (themeSearch conf)
+                    searchRef  <- newIORef es
                     searchLock <- Lock.new
                     writeIORef (bufSeq ui) (sq Seq.|> (BufSearch searchRef, searchLock))
                     writeIORef (bufCurrent ui) (Seq.length sq + 1)

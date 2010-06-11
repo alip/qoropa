@@ -20,13 +20,13 @@
 module Qoropa.Buffer.Search
     ( Attributes(..), StatusBar(..), StatusMessage(..), Line(..), Theme(..), Search(..)
     , emptySearch
-    , paint, load, new
+    , paint, new, cancelLoad
     , scrollUp, scrollDown
     , selectPrev, selectNext
     ) where
 
-import Control.Concurrent.MVar  (MVar, putMVar)
-import Control.Monad            (when)
+import Control.Concurrent.MVar  (MVar, newEmptyMVar, putMVar, tryTakeMVar, tryPutMVar)
+import Control.Monad            (when, unless)
 import Data.IORef               (IORef, readIORef, writeIORef)
 
 import Codec.Binary.UTF8.String (decodeString)
@@ -103,6 +103,7 @@ data Search = Search
     , bufferStatusBar     :: StatusBar
     , bufferStatusMessage :: StatusMessage
     , bufferTheme         :: Theme
+    , bufferCancel        :: MVar ()
     }
 
 emptyStatusBar :: StatusBar
@@ -115,15 +116,18 @@ emptyStatusBar = StatusBar
 emptyStatusMessage :: StatusMessage
 emptyStatusMessage = StatusMessage { sMessage = " " }
 
-emptySearch :: Theme -> Search
-emptySearch theme = Search
-    { bufferFirst         = 1
-    , bufferSelected      = 1
-    , bufferLines         = []
-    , bufferStatusBar     = emptyStatusBar
-    , bufferStatusMessage = emptyStatusMessage
-    , bufferTheme         = theme
-    }
+emptySearch :: Theme -> IO Search
+emptySearch theme = do
+    cancelSearch <- newEmptyMVar
+    return Search
+        { bufferFirst         = 1
+        , bufferSelected      = 1
+        , bufferLines         = []
+        , bufferStatusBar     = emptyStatusBar
+        , bufferStatusMessage = emptyStatusMessage
+        , bufferTheme         = theme
+        , bufferCancel        = cancelSearch
+        }
 
 paint :: Search -> Int -> Picture
 paint buf height =
@@ -166,7 +170,6 @@ scrollUp' ref count = do
             msg <- themeFormatHitTheTop (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
-
 
 scrollDown :: (IORef Search, Lock) -> Int -> Int -> IO ()
 scrollDown (ref, lock) cols count = Lock.with lock (scrollDown' ref cols count)
@@ -229,6 +232,20 @@ selectNext' ref cols count = do
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
+cancelLoad :: IORef Search -> IO ()
+cancelLoad ref = do
+    buf <- readIORef ref
+    tryPutMVar (bufferCancel buf) ()
+    return ()
+
+isCancelledLoad :: IORef Search -> IO Bool
+isCancelledLoad ref = do
+    buf    <- readIORef ref
+    status <- tryTakeMVar (bufferCancel buf)
+    case status of
+        Just _  -> return True
+        Nothing -> return False
+
 loadOne :: IORef Search -> NM.Thread -> IO ()
 loadOne ref t = do
     buf <- readIORef ref
@@ -261,17 +278,19 @@ load (ref, lock) mvar ts = do
     when v $ do
         (Just t) <- NM.threadsGet ts
         Lock.with lock (loadOne ref t >> putMVar mvar Redraw)
-        NM.threadDestroy t >> NM.threadsMoveToNext ts >> load (ref, lock) mvar ts
+        NM.threadDestroy t >> NM.threadsMoveToNext ts
+        cancelled <- isCancelledLoad ref
+        unless cancelled $ load (ref, lock) mvar ts
 
 new :: (IORef Search, Lock) -> MVar UIEvent -> FilePath -> String -> IO ()
 new (ref, lock) mvar fp term = do
-    Lock.with lock (do
+    Lock.with lock $ do
         buf <- readIORef ref
         msg <- (themeFormatLoading (bufferTheme buf)) term
         writeIORef ref buf { bufferStatusBar = (bufferStatusBar buf) { sBarTerm = term }
                            , bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
-        putMVar mvar Redraw)
+        putMVar mvar Redraw
 
     (Just db) <- NM.databaseOpen fp NM.ModeReadOnly
     (Just query) <- NM.queryCreate db term
@@ -279,11 +298,11 @@ new (ref, lock) mvar fp term = do
     load (ref, lock) mvar threads
     NM.databaseClose db
 
-    Lock.with lock (do
+    Lock.with lock $ do
         buf <- readIORef ref
         msg <- (themeFormatLoadingDone (bufferTheme buf)) term
         writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
-        putMVar mvar Redraw)
+        putMVar mvar Redraw
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

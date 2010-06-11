@@ -46,7 +46,7 @@ import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
     , redraw, exit
     , selectPrev, selectNext
-    , openSelected
+    , openSelected, cancelOperation
     )
 
 import qualified Qoropa.Buffer.Folder as Folder
@@ -129,7 +129,7 @@ defaultSearchTheme = Search.Theme
     , Search.themeDrawStatusMessage  = searchDrawStatusMessage
     , Search.themeFormatHitTheTop    = beep >> return "Hit the top!"
     , Search.themeFormatHitTheBottom = beep >> return "Hit the bottom!"
-    , Search.themeFormatLoading      = (\term -> return $ "Loading " ++ term ++ " ...")
+    , Search.themeFormatLoading      = (\term -> return $ "Loading " ++ term ++ " ... (Hit ^C to cancel)")
     , Search.themeFormatLoadingDone  = (\term -> return $ "Done loading " ++ term)
     }
 
@@ -177,13 +177,14 @@ data QoropaConfig = QoropaConfig
 
 defaultKeys :: Map Event (UI -> IO ())
 defaultKeys = Map.fromList
-    [ ( EvKey (KASCII 'l') [MCtrl], redraw        )
-    , ( EvKey (KASCII 'q') [],      exit          )
-    , ( EvKey (KASCII 'j') [],      selectNext 1  )
-    , ( EvKey (KASCII 'k') [],      selectPrev 1  )
-    , ( EvKey KUp [],               selectPrev 1  )
-    , ( EvKey KDown [],             selectNext 1  )
-    , ( EvKey KEnter [],            openSelected  )
+    [ ( EvKey (KASCII 'l') [MCtrl], redraw          )
+    , ( EvKey (KASCII 'q') [],      exit            )
+    , ( EvKey (KASCII 'j') [],      selectNext 1    )
+    , ( EvKey (KASCII 'k') [],      selectPrev 1    )
+    , ( EvKey KUp [],               selectPrev 1    )
+    , ( EvKey KDown [],             selectNext 1    )
+    , ( EvKey KEnter [],            openSelected    )
+    , ( EvKey (KASCII 'c') [MCtrl], cancelOperation )
     ]
 
 defaultConfig :: QoropaConfig
