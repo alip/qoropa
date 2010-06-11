@@ -72,7 +72,7 @@ recompile force = do
         then do
             status <- bracket (openFile err WriteMode) hClose $ \h ->
                 waitForProcess =<< runProcess "ghc" [ "--make"
-                                                    , "xmonad.hs"
+                                                    , "qoropa.hs"
                                                     , "-i"
                                                     , "-ilib"
                                                     , "-fforce-recomp"
