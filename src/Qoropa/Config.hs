@@ -112,7 +112,7 @@ folderDrawLine attr selected line =
             else snd $ Folder.attrCount attr
         myNameFormat  = printf "%-20s" (Folder.folderName line)
         myCountFormat = printf "%7d" (Folder.folderCount line)
-        myTermFormat  = (Folder.folderTerm line)
+        myTermFormat  = Folder.folderTerm line
 
 folderDrawStatusBar :: Folder.Attributes -> Folder.StatusBar -> Image
 folderDrawStatusBar attr bar =

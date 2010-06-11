@@ -223,7 +223,7 @@ exit ui = do
 mainLoop :: QoropaConfig -> UI -> IO ()
 mainLoop conf ui = do
     path <- expandTilde (databasePath conf)
-    putMVar (uiEvent ui) $ NewFolder
+    putMVar (uiEvent ui) NewFolder
     eventLoop path
     where
         eventLoop :: FilePath -> IO ()

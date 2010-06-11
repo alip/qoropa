@@ -298,7 +298,7 @@ new :: (IORef Search, Lock) -> MVar UIEvent -> FilePath -> String -> IO ()
 new (ref, lock) mvar fp term = do
     Lock.with lock $ do
         buf <- readIORef ref
-        msg <- (themeFormatLoading (bufferTheme buf)) term
+        msg <- themeFormatLoading (bufferTheme buf) term
         writeIORef ref buf { bufferStatusBar = (bufferStatusBar buf) { sBarTerm = term }
                            , bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
@@ -312,7 +312,7 @@ new (ref, lock) mvar fp term = do
 
     Lock.with lock $ do
         buf <- readIORef ref
-        msg <- (themeFormatLoadingDone (bufferTheme buf)) term
+        msg <- themeFormatLoadingDone (bufferTheme buf) term
         writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
         putMVar mvar Redraw

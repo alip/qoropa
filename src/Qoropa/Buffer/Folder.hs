@@ -256,7 +256,7 @@ load _ _ _ [] = return ()
 load (ref, lock) mvar db ((name, term):xs) = do
     Lock.with lock $ do
         buf <- readIORef ref
-        msg <- (themeFormatLoading (bufferTheme buf)) (name, term)
+        msg <- themeFormatLoading (bufferTheme buf) (name, term)
         writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
         putMVar mvar Redraw
@@ -270,7 +270,7 @@ load (ref, lock) mvar db ((name, term):xs) = do
             loadOne ref (name, term) count
 
             buf <- readIORef ref
-            msg <- (themeFormatLoadingDone (bufferTheme buf)) (name, term)
+            msg <- themeFormatLoadingDone (bufferTheme buf) (name, term)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
