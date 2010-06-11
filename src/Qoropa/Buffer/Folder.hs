@@ -23,6 +23,7 @@ module Qoropa.Buffer.Folder
     , paint, load, new
     , scrollUp, scrollDown
     , selectPrev, selectNext
+    , termSelected
     ) where
 
 import Control.Concurrent.MVar  (MVar, putMVar)
@@ -133,7 +134,7 @@ paint buf height =
         msg   = myDrawStatusMessage myAttr (bufferStatusMessage buf)
 
 scrollUp :: (IORef Folder, Lock) -> Int -> IO ()
-scrollUp (ref, lock) count = Lock.with lock (scrollUp' ref count)
+scrollUp (ref, lock) count = Lock.with lock $ scrollUp' ref count
 
 scrollUp' :: IORef Folder -> Int -> IO ()
 scrollUp' ref count = do
@@ -152,7 +153,7 @@ scrollUp' ref count = do
                                }
 
 scrollDown :: (IORef Folder, Lock) -> Int -> Int -> IO ()
-scrollDown (ref, lock) cols count = Lock.with lock (scrollDown' ref cols count)
+scrollDown (ref, lock) cols count = Lock.with lock $ scrollDown' ref cols count
 
 scrollDown' :: IORef Folder -> Int -> Int -> IO ()
 scrollDown' ref cols count = do
@@ -172,7 +173,7 @@ scrollDown' ref cols count = do
                                }
 
 selectPrev :: (IORef Folder, Lock) -> Int -> IO ()
-selectPrev (ref, lock) count = Lock.with lock (selectPrev' ref count)
+selectPrev (ref, lock) count = Lock.with lock $ selectPrev' ref count
 
 selectPrev' :: IORef Folder -> Int -> IO ()
 selectPrev' ref count = do
@@ -192,7 +193,7 @@ selectPrev' ref count = do
                                }
 
 selectNext :: (IORef Folder, Lock) -> Int -> Int -> IO ()
-selectNext (ref, lock) cols count = Lock.with lock (selectNext' ref cols count)
+selectNext (ref, lock) cols count = Lock.with lock $ selectNext' ref cols count
 
 selectNext' :: IORef Folder -> Int -> Int -> IO ()
 selectNext' ref cols count = do
@@ -212,6 +213,12 @@ selectNext' ref cols count = do
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
+termSelected :: IORef Folder -> IO String
+termSelected ref = do
+    buf <- readIORef ref
+    let line = (bufferLines buf) !! (bufferSelected buf - 1)
+    return $ folderTerm line
+
 loadOne :: IORef Folder -> (String, String) -> Integer -> IO ()
 loadOne ref (name, term) count = do
     buf <- readIORef ref
@@ -229,18 +236,18 @@ loadOne ref (name, term) count = do
 load :: (IORef Folder, Lock) -> MVar UIEvent -> NM.Database -> [(String, String)] -> IO ()
 load _ _ _ [] = return ()
 load (ref, lock) mvar db ((name, term):xs) = do
-    Lock.with lock (do
+    Lock.with lock $ do
         buf <- readIORef ref
         msg <- (themeFormatLoading (bufferTheme buf)) (name, term)
         writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
-        putMVar mvar Redraw)
+        putMVar mvar Redraw
 
     (Just query) <- NM.queryCreate db term
     count <- NM.queryCountMessages query
     NM.queryDestroy query
 
-    Lock.with lock (do
+    Lock.with lock $ do
         loadOne ref (name, term) count
 
         buf <- readIORef ref
@@ -248,7 +255,7 @@ load (ref, lock) mvar db ((name, term):xs) = do
         writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                            }
 
-        putMVar mvar Redraw)
+        putMVar mvar Redraw
 
     load (ref, lock) mvar db xs
 

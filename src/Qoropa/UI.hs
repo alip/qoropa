@@ -25,6 +25,7 @@ module Qoropa.UI
     , start, exit, mainLoop
     , currentBuffer, redraw
     , scrollUp, scrollDown, selectPrev, selectNext
+    , openSelected
     ) where
 
 import Control.Concurrent       (ThreadId, forkIO, myThreadId)
@@ -52,6 +53,7 @@ import qualified Qoropa.Buffer.Folder as Folder
     ( emptyFolder, paint, new
     , scrollUp, scrollDown
     , selectNext, selectPrev
+    , termSelected
     )
 
 import qualified Qoropa.Buffer.Search as Search
@@ -62,7 +64,7 @@ import qualified Qoropa.Buffer.Search as Search
 
 import Qoropa.Buffer (Buffer(..))
 import Qoropa.Config (QoropaConfig(..))
-import Qoropa.Util   (expandTilde)
+import Qoropa.Util   (beep, expandTilde)
 
 data UI = UI
     { vty        :: Vty
@@ -148,6 +150,17 @@ selectNext count ui = do
             forkIO $ Search.selectNext (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
             return ()
         _ -> return ()
+
+openSelected :: UI -> IO ()
+openSelected ui = do
+    (buf, _) <- currentBuffer ui
+    case buf of
+        BufFolder ref -> do
+            forkIO $ do
+                term <- Folder.termSelected ref
+                putMVar (uiEvent ui) $ NewSearch term
+            return ()
+        _ -> beep
 
 start :: IO UI
 start = do

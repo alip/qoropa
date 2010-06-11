@@ -46,6 +46,7 @@ import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
     , redraw, exit
     , selectPrev, selectNext
+    , openSelected
     )
 
 import qualified Qoropa.Buffer.Folder as Folder
@@ -182,12 +183,13 @@ defaultKeys = Map.fromList
     , ( EvKey (KASCII 'k') [],      selectPrev 1  )
     , ( EvKey KUp [],               selectPrev 1  )
     , ( EvKey KDown [],             selectNext 1  )
+    , ( EvKey KEnter [],            openSelected  )
     ]
 
 defaultConfig :: QoropaConfig
 defaultConfig = QoropaConfig
     { databasePath = "~/.maildir"
-    , folderList   = [("inbox", "tag:inbox")]
+    , folderList   = [("inbox", "tag:inbox"), ("unread", "tag:inbox and tag:unread")]
     , keys         = defaultKeys
     , themeSearch  = defaultSearchTheme
     , themeFolder  = defaultFolderTheme

@@ -21,6 +21,7 @@ module Qoropa.UI
     ( UI(..), UIEvent(..)
     , redraw, exit, currentBuffer
     , scrollUp, scrollDown, selectPrev, selectNext
+    , openSelected
     ) where
 
 import Control.Concurrent      (ThreadId)
@@ -55,5 +56,6 @@ scrollUp :: Int -> UI -> IO ()
 scrollDown :: Int -> UI -> IO ()
 selectPrev :: Int -> UI -> IO ()
 selectNext :: Int -> UI -> IO ()
+openSelected :: UI -> IO ()
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :
