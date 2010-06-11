@@ -23,11 +23,11 @@ module Qoropa.Buffer.Folder
     , paint, load, new
     , scrollUp, scrollDown
     , selectPrev, selectNext
-    , termSelected
+    , termSelected, cancelLoad
     ) where
 
-import Control.Concurrent.MVar  (MVar, putMVar)
-import Control.Monad            (when)
+import Control.Concurrent.MVar  (MVar, newEmptyMVar, putMVar, tryPutMVar, tryTakeMVar)
+import Control.Monad            (when, unless)
 import Data.IORef               (IORef, readIORef, writeIORef)
 
 import Graphics.Vty
@@ -89,6 +89,7 @@ data Folder = Folder
     , bufferStatusBar     :: StatusBar
     , bufferStatusMessage :: StatusMessage
     , bufferTheme         :: Theme
+    , bufferCancel        :: MVar ()
     }
 
 emptyStatusBar :: StatusBar
@@ -100,15 +101,18 @@ emptyStatusBar = StatusBar
 emptyStatusMessage :: StatusMessage
 emptyStatusMessage = StatusMessage { sMessage = " " }
 
-emptyFolder :: Theme -> Folder
-emptyFolder theme = Folder
-    { bufferFirst         = 1
-    , bufferSelected      = 1
-    , bufferLines         = []
-    , bufferStatusBar     = emptyStatusBar
-    , bufferStatusMessage = emptyStatusMessage
-    , bufferTheme         = theme
-    }
+emptyFolder :: Theme -> IO Folder
+emptyFolder theme = do
+    cancelFolder <- newEmptyMVar
+    return Folder
+        { bufferFirst         = 1
+        , bufferSelected      = 1
+        , bufferLines         = []
+        , bufferStatusBar     = emptyStatusBar
+        , bufferStatusMessage = emptyStatusMessage
+        , bufferTheme         = theme
+        , bufferCancel        = cancelFolder
+        }
 
 paint :: Folder -> Int -> Picture
 paint buf height =
@@ -219,6 +223,20 @@ termSelected ref = do
     let line = (bufferLines buf) !! (bufferSelected buf - 1)
     return $ folderTerm line
 
+cancelLoad :: IORef Folder -> IO ()
+cancelLoad ref = do
+    buf <- readIORef ref
+    tryPutMVar (bufferCancel buf) ()
+    return ()
+
+isCancelledLoad :: IORef Folder -> IO Bool
+isCancelledLoad ref = do
+    buf    <- readIORef ref
+    status <- tryTakeMVar (bufferCancel buf)
+    case status of
+        Just _  -> return True
+        Nothing -> return False
+
 loadOne :: IORef Folder -> (String, String) -> Integer -> IO ()
 loadOne ref (name, term) count = do
     buf <- readIORef ref
@@ -257,7 +275,8 @@ load (ref, lock) mvar db ((name, term):xs) = do
 
         putMVar mvar Redraw
 
-    load (ref, lock) mvar db xs
+    cancelled <- isCancelledLoad ref
+    unless cancelled $ load (ref, lock) mvar db xs
 
 new :: (IORef Folder, Lock) -> MVar UIEvent -> FilePath -> [(String, String)] -> IO ()
 new (ref, lock) mvar fp folders = do

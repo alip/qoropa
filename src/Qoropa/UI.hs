@@ -50,7 +50,7 @@ import Qoropa.Lock (Lock)
 import qualified Qoropa.Lock as Lock (new)
 
 import qualified Qoropa.Buffer.Folder as Folder
-    ( emptyFolder, paint, new
+    ( emptyFolder, paint, new, cancelLoad
     , scrollUp, scrollDown
     , selectNext, selectPrev
     , termSelected
@@ -166,8 +166,8 @@ cancelOperation :: UI -> IO ()
 cancelOperation ui = do
     (buf, _) <- currentBuffer ui
     case buf of
-        BufSearch ref -> do
-            Search.cancelLoad ref
+        BufFolder ref -> Folder.cancelLoad ref
+        BufSearch ref -> Search.cancelLoad ref
         _ -> beep
 
 start :: IO UI
@@ -221,7 +221,8 @@ mainLoop conf ui = do
                                 Nothing -> return ()
                 NewFolder -> do
                     sq <- readIORef (bufSeq ui)
-                    folderRef  <- newIORef (Folder.emptyFolder (themeFolder conf))
+                    ef <- Folder.emptyFolder (themeFolder conf)
+                    folderRef  <- newIORef ef
                     folderLock <- Lock.new
                     writeIORef (bufSeq ui) (sq Seq.|> (BufFolder folderRef, folderLock))
                     writeIORef (bufCurrent ui) (Seq.length sq + 1)
