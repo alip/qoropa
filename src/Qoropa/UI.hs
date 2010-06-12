@@ -47,7 +47,7 @@ import System.Log.Logger
     )
 
 import Graphics.Vty
-    ( Vty, mkVty, reserve_display, shutdown, terminal, update
+    ( Vty, mkVtyEscDelay, reserve_display, shutdown, terminal, update
     , DisplayRegion(..), display_bounds
     , Event(..), Key(..), Modifier(..), next_event
     )
@@ -79,7 +79,8 @@ import Qoropa.Config (QoropaConfig(..))
 import Qoropa.Util   (beep, expandTilde)
 
 data UI = UI
-    { vty        :: Vty
+    { userConfig :: QoropaConfig
+    , vty        :: Vty
     , uiEvent    :: MVar UIEvent
     , uiThread   :: ThreadId
     , scrSize    :: IORef (Int, Int)
@@ -215,17 +216,18 @@ cancelOperation ui = do
         BufSearch ref -> Search.cancelLoad ref
         _ -> beep
 
-start :: IO UI
-start = do
-    tid          <- myThreadId
-    eventUI      <- newEmptyMVar
+start :: QoropaConfig -> IO UI
+start cfg = do
+    tid     <- myThreadId
+    eventUI <- newEmptyMVar
 
-    vtyUI <- mkVty
+    vtyUI <- mkVtyEscDelay (configVtyEscDelay cfg)
     DisplayRegion x0 y0 <- display_bounds $ terminal vtyUI
     size <- newIORef (fromEnum y0, fromEnum x0)
     sq <- newIORef Seq.empty
     cur <- newIORef 0
-    let ui = UI { vty        = vtyUI
+    let ui = UI { userConfig = cfg
+                , vty        = vtyUI
                 , scrSize    = size
                 , uiEvent    = eventUI
                 , uiThread   = tid
@@ -246,21 +248,21 @@ exit ui = do
     throwTo (uiThread ui) ExitSuccess
     return ()
 
-mainLoop :: QoropaConfig -> UI -> IO ()
-mainLoop conf ui = do
-    path <- expandTilde (databasePath conf)
+mainLoop :: UI -> IO ()
+mainLoop ui = do
+    path <- expandTilde $ configDatabasePath $ userConfig ui
 
     -- Initialize the log buffer
-    sq <- readIORef (bufSeq ui)
-    el <- Log.emptyLog (themeLog conf)
+    sq <- readIORef $ bufSeq ui
+    el <- Log.emptyLog $ configThemeLog $ userConfig ui
     logRef  <- newIORef el
     logLock <- Lock.new
     writeIORef (bufSeq ui) (sq Seq.|> (BufLog logRef, logLock))
     writeIORef (bufCurrent ui) (Seq.length sq + 1)
 
     -- Add the log handler
-    let logHandler = Log.handler (logRef, logLock) (uiEvent ui) (logPriority conf)
-    updateGlobalLogger rootLoggerName $ setLevel (logPriority conf) . setHandlers [logHandler]
+    let logHandler = Log.handler (logRef, logLock) (uiEvent ui) (configLogPriority $ userConfig ui)
+    updateGlobalLogger rootLoggerName $ setLevel (configLogPriority $ userConfig ui) . setHandlers [logHandler]
     noticeM rootLoggerName "Initialized"
 
     forkIO $ putMVar (uiEvent ui) NewFolder
@@ -275,21 +277,21 @@ mainLoop conf ui = do
                         (EvResize x y) -> writeIORef (scrSize ui) (y, x) >> redraw ui
                         (EvKey (KASCII 'z') [MCtrl]) -> raiseSignal sigTSTP
                         _ ->
-                            case Map.lookup e (keys conf) of
+                            case Map.lookup e (configKeys $ userConfig ui) of
                                 Just f -> f ui
                                 Nothing -> debugM rootLoggerName $ "Unhandled event: " ++ show e
                 NewFolder -> do
                     sq <- readIORef (bufSeq ui)
-                    ef <- Folder.emptyFolder (themeFolder conf)
+                    ef <- Folder.emptyFolder (configThemeFolder $ userConfig ui)
                     folderRef  <- newIORef ef
                     folderLock <- Lock.new
                     writeIORef (bufSeq ui) (sq Seq.|> (BufFolder folderRef, folderLock))
                     writeIORef (bufCurrent ui) (Seq.length sq + 1)
-                    forkIO $ Folder.new (folderRef, folderLock) (uiEvent ui) path (folderList conf)
+                    forkIO $ Folder.new (folderRef, folderLock) (uiEvent ui) path (configFolderList $ userConfig ui)
                     return ()
                 NewSearch term -> do
                     sq <- readIORef (bufSeq ui)
-                    es <- Search.emptySearch (themeSearch conf)
+                    es <- Search.emptySearch (configThemeSearch $ userConfig ui)
                     searchRef  <- newIORef es
                     searchLock <- Lock.new
                     writeIORef (bufSeq ui) (sq Seq.|> (BufSearch searchRef, searchLock))

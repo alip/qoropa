@@ -303,13 +303,14 @@ searchDrawStatusMessage :: Search.Attributes -> Search.StatusMessage -> Image
 searchDrawStatusMessage attr msg = string (Search.attrStatusMessage attr) (Search.sMessage msg)
 
 data QoropaConfig = QoropaConfig
-    { databasePath :: FilePath
-    , folderList   :: [(String,String)]
-    , keys         :: Map Event (UI -> IO ())
-    , logPriority  :: Priority
-    , themeSearch  :: Search.Theme
-    , themeFolder  :: Folder.Theme
-    , themeLog     :: Log.Theme
+    { configDatabasePath :: FilePath
+    , configFolderList   :: [(String,String)]
+    , configKeys         :: Map Event (UI -> IO ())
+    , configLogPriority  :: Priority
+    , configThemeSearch  :: Search.Theme
+    , configThemeFolder  :: Folder.Theme
+    , configThemeLog     :: Log.Theme
+    , configVtyEscDelay  :: Int
     }
 
 defaultKeys :: Map Event (UI -> IO ())
@@ -332,13 +333,14 @@ defaultKeys = Map.fromList $
 
 defaultConfig :: QoropaConfig
 defaultConfig = QoropaConfig
-    { databasePath = "~/.maildir"
-    , folderList   = [("inbox", "tag:inbox"), ("unread", "tag:inbox and tag:unread")]
-    , keys         = defaultKeys
-    , logPriority  = NOTICE
-    , themeSearch  = defaultSearchTheme
-    , themeFolder  = defaultFolderTheme
-    , themeLog     = defaultLogTheme
+    { configDatabasePath = "~/.maildir"
+    , configFolderList   = [("inbox", "tag:inbox"), ("unread", "tag:inbox and tag:unread")]
+    , configKeys         = defaultKeys
+    , configLogPriority  = NOTICE
+    , configThemeSearch  = defaultSearchTheme
+    , configThemeFolder  = defaultFolderTheme
+    , configThemeLog     = defaultLogTheme
+    , configVtyEscDelay  = 1000
     }
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

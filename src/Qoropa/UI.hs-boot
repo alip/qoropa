@@ -34,9 +34,11 @@ import Graphics.Vty  (Vty, Event)
 
 import Qoropa.Lock                  (Lock)
 import {-# SOURCE #-} Qoropa.Buffer (Buffer)
+import {-# SOURCE #-} Qoropa.Config (QoropaConfig)
 
 data UI = UI
-    { vty        :: Vty
+    { userConfig :: QoropaConfig
+    , vty        :: Vty
     , uiEvent    :: MVar UIEvent
     , uiThread   :: ThreadId
     , scrSize    :: IORef (Int, Int)

@@ -17,16 +17,6 @@
 - Author: Ali Polatel <alip@exherbo.org>
 -}
 
-module Qoropa
-    ( qoropa
-    ) where
-
-import Qoropa.Config (QoropaConfig)
-import Qoropa.UI     (start, mainLoop)
-
-qoropa :: QoropaConfig -> IO ()
-qoropa cfg = do
-    ui <- start cfg
-    mainLoop ui
+module Qoropa.Config where data QoropaConfig
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :
