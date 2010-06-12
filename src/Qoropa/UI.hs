@@ -41,6 +41,11 @@ import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
 import qualified Data.Map as Map
 
+import System.Log.Logger
+    ( updateGlobalLogger, rootLoggerName, setHandlers, setLevel
+    , debugM, noticeM
+    )
+
 import Graphics.Vty
     ( Vty, mkVty, reserve_display, shutdown, terminal, update
     , DisplayRegion(..), display_bounds
@@ -55,6 +60,12 @@ import qualified Qoropa.Buffer.Folder as Folder
     , scrollUp, scrollDown
     , selectNext, selectPrev
     , termSelected
+    )
+
+import qualified Qoropa.Buffer.Log as Log
+    ( emptyLog, paint, handler
+    , scrollUp, scrollDown
+    , selectNext, selectPrev
     )
 
 import qualified Qoropa.Buffer.Search as Search
@@ -115,6 +126,9 @@ redraw ui = do
         BufFolder ref -> do
             rbuf <- readIORef ref
             update (vty ui) $ Folder.paint rbuf cols
+        BufLog ref -> do
+            rbuf <- readIORef ref
+            update (vty ui) $ Log.paint rbuf cols
         BufSearch ref -> do
             rbuf <- readIORef ref
             update (vty ui) $ Search.paint rbuf cols
@@ -126,6 +140,9 @@ scrollUp count ui = do
     case buf of
         BufFolder ref -> do
             forkIO $ Folder.scrollUp (ref, lock) count >> putMVar (uiEvent ui) Redraw
+            return ()
+        BufLog ref -> do
+            forkIO $ Log.scrollUp (ref, lock) count >> putMVar (uiEvent ui) Redraw
             return ()
         BufSearch ref -> do
             forkIO $ Search.scrollUp (ref, lock) count >> putMVar (uiEvent ui) Redraw
@@ -140,6 +157,9 @@ scrollDown count ui = do
         BufFolder ref -> do
             forkIO $ Folder.scrollDown (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
             return ()
+        BufLog ref -> do
+            forkIO $ Log.scrollDown (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
+            return ()
         BufSearch ref -> do
             forkIO $ Search.scrollDown (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
             return ()
@@ -151,6 +171,9 @@ selectPrev count ui = do
     case buf of
         BufFolder ref -> do
             forkIO $ Folder.selectPrev (ref, lock) count >> putMVar (uiEvent ui) Redraw
+            return ()
+        BufLog ref -> do
+            forkIO $ Log.selectPrev (ref, lock) count >> putMVar (uiEvent ui) Redraw
             return ()
         BufSearch ref -> do
             forkIO $ Search.selectPrev (ref, lock) count >> putMVar (uiEvent ui) Redraw
@@ -164,6 +187,9 @@ selectNext count ui = do
     case buf of
         BufFolder ref -> do
             forkIO $ Folder.selectNext (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
+            return ()
+        BufLog ref -> do
+            forkIO $ Log.selectNext (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
             return ()
         BufSearch ref -> do
             forkIO $ Search.selectNext (ref, lock) cols count >> putMVar (uiEvent ui) Redraw
@@ -223,7 +249,21 @@ exit ui = do
 mainLoop :: QoropaConfig -> UI -> IO ()
 mainLoop conf ui = do
     path <- expandTilde (databasePath conf)
-    putMVar (uiEvent ui) NewFolder
+
+    -- Initialize the log buffer
+    sq <- readIORef (bufSeq ui)
+    el <- Log.emptyLog (themeLog conf)
+    logRef  <- newIORef el
+    logLock <- Lock.new
+    writeIORef (bufSeq ui) (sq Seq.|> (BufLog logRef, logLock))
+    writeIORef (bufCurrent ui) (Seq.length sq + 1)
+
+    -- Add the log handler
+    let logHandler = Log.handler (logRef, logLock) (uiEvent ui) (logPriority conf)
+    updateGlobalLogger rootLoggerName $ setLevel (logPriority conf) . setHandlers [logHandler]
+    noticeM rootLoggerName "Initialized"
+
+    forkIO $ putMVar (uiEvent ui) NewFolder
     eventLoop path
     where
         eventLoop :: FilePath -> IO ()
@@ -237,7 +277,7 @@ mainLoop conf ui = do
                         _ ->
                             case Map.lookup e (keys conf) of
                                 Just f -> f ui
-                                Nothing -> return ()
+                                Nothing -> debugM rootLoggerName $ "Unhandled event: " ++ show e
                 NewFolder -> do
                     sq <- readIORef (bufSeq ui)
                     ef <- Folder.emptyFolder (themeFolder conf)

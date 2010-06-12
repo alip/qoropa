@@ -22,6 +22,8 @@ module Qoropa.Config
     , defaultConfig, defaultKeys
     , defaultFolderAttributes, defaultFolderTheme
     , folderDrawLine, folderDrawStatusBar, folderDrawStatusMessage
+    , defaultLogAttributes, defaultLogTheme
+    , logDrawLine, logDrawStatusBar, logDrawStatusMessage
     , defaultSearchAttributes, defaultSearchTheme
     , searchDrawLine, searchDrawStatusBar, searchDrawStatusMessage
     ) where
@@ -29,6 +31,9 @@ module Qoropa.Config
 import Data.Char         (chr)
 import Data.List         (intersperse)
 import Data.String.Utils (join)
+import Data.Time         (formatTime)
+import System.Locale     (defaultTimeLocale)
+import System.Log        (Priority(..))
 import Text.Printf       (printf)
 
 import Data.Map (Map)
@@ -55,6 +60,8 @@ import {-# SOURCE #-} Qoropa.UI
     )
 
 import qualified Qoropa.Buffer.Folder as Folder
+    ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
+import qualified Qoropa.Buffer.Log as Log
     ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
 import qualified Qoropa.Buffer.Search as Search
     ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
@@ -128,6 +135,72 @@ folderDrawStatusBar attr bar =
 folderDrawStatusMessage :: Folder.Attributes -> Folder.StatusMessage -> Image
 folderDrawStatusMessage attr msg = string (Folder.attrStatusMessage attr) (Folder.sMessage msg)
 
+defaultLogAttributes :: Log.Attributes
+defaultLogAttributes = Log.Attributes
+    { Log.attrStatusBar     = def_attr `with_back_color` green `with_fore_color` black
+    , Log.attrStatusMessage = def_attr `with_fore_color` bright_yellow
+    , Log.attrFill          = def_attr `with_fore_color` cyan
+    , Log.attrTime          = ( def_attr `with_fore_color` white
+                              , def_attr `with_back_color` yellow `with_fore_color` black
+                              )
+    , Log.attrPriority      = ( def_attr `with_fore_color` green
+                              , def_attr `with_back_color` yellow `with_fore_color` blue `with_style` bold
+                              )
+    , Log.attrMessage       = ( def_attr `with_fore_color` white
+                              , def_attr `with_back_color` yellow `with_fore_color` black
+                              )
+    , Log.attrDefault       = ( def_attr
+                              , def_attr `with_back_color` yellow
+                              )
+    }
+
+defaultLogTheme :: Log.Theme
+defaultLogTheme = Log.Theme
+    { Log.themeAttrs              = defaultLogAttributes
+    , Log.themeFill               = "~"
+    , Log.themeDrawLine           = logDrawLine
+    , Log.themeDrawStatusBar      = logDrawStatusBar
+    , Log.themeDrawStatusMessage  = logDrawStatusMessage
+    , Log.themeFormatHitTheTop    = beep >> return "Hit the top!"
+    , Log.themeFormatHitTheBottom = beep >> return "Hit the bottom!"
+    }
+
+logDrawLine :: Log.Attributes -> Int -> Log.Line -> Image
+logDrawLine attr selected line =
+    horiz_cat $ intersperse (char myDefaultAttribute ' ')
+        [ string myTimeAttribute myTimeFormat
+        , string myPriorityAttribute myPriorityFormat
+        , string myMessageAttribute myMessageFormat
+        ]
+    where
+        myDefaultAttribute = if selected /= Log.lineIndex line
+            then fst $ Log.attrDefault attr
+            else snd $ Log.attrDefault attr
+        myTimeAttribute = if selected /= Log.lineIndex line
+            then fst $ Log.attrTime attr
+            else snd $ Log.attrTime attr
+        myPriorityAttribute = if selected /= Log.lineIndex line
+            then fst $ Log.attrPriority attr
+            else snd $ Log.attrPriority attr
+        myMessageAttribute = if selected /= Log.lineIndex line
+            then fst $ Log.attrMessage attr
+            else snd $ Log.attrMessage attr
+        myTimeFormat     = formatTime defaultTimeLocale "%Y-%m-%d %T %z" (Log.logTime line)
+        myPriorityFormat = printf "%-7s" (show $ fst $ Log.logRecord line)
+        myMessageFormat  = snd $ Log.logRecord line
+
+logDrawStatusBar :: Log.Attributes -> Log.StatusBar -> Image
+logDrawStatusBar attr bar =
+    string myAttribute myFormat
+    where
+        myAttribute = Log.attrStatusBar attr
+        myFormat  = "[Qoropa.Buffer.Log] " ++
+            "[" ++ show (Log.sBarCurrent bar) ++
+            "/" ++ show (Log.sBarTotal bar) ++ "]"
+
+logDrawStatusMessage :: Log.Attributes -> Log.StatusMessage -> Image
+logDrawStatusMessage attr msg = string (Log.attrStatusMessage attr) (Log.sMessage msg)
+
 defaultSearchAttributes :: Search.Attributes
 defaultSearchAttributes = Search.Attributes
     { Search.attrStatusBar        = def_attr `with_back_color` green `with_fore_color` black
@@ -195,10 +268,10 @@ searchDrawLine attr selected line =
             then fst $ Search.attrTag attr
             else snd $ Search.attrTag attr
         myTimeFormat  = printf "%15s" (snd $ Search.threadNewestDate line)
-        myCountFormat = printf "%-7s" ( "[" ++ show (Search.threadMatched line) ++
-                                        "/" ++ show (Search.threadTotal line) ++
-                                        "]"
-                                      )
+        myCountFormat = printf "%-10s" ( "[" ++ show (Search.threadMatched line) ++
+                                         "/" ++ show (Search.threadTotal line) ++
+                                         "]"
+                                       )
         mySubjectFormat = printf "%-20s" (Search.threadSubject line)
         myTagFormat     = join " " $ map ('+' :) (Search.threadTags line)
 
@@ -233,8 +306,10 @@ data QoropaConfig = QoropaConfig
     { databasePath :: FilePath
     , folderList   :: [(String,String)]
     , keys         :: Map Event (UI -> IO ())
+    , logPriority  :: Priority
     , themeSearch  :: Search.Theme
     , themeFolder  :: Folder.Theme
+    , themeLog     :: Log.Theme
     }
 
 defaultKeys :: Map Event (UI -> IO ())
@@ -243,12 +318,14 @@ defaultKeys = Map.fromList $
     , ( EvKey (KASCII 'q') [],      exit             )
     , ( EvKey (KASCII 'j') [],      selectNext 1     )
     , ( EvKey (KASCII 'k') [],      selectPrev 1     )
+    , ( EvKey (KASCII 'J') [],      selectNext 5     )
+    , ( EvKey (KASCII 'K') [],      selectPrev 5     )
     , ( EvKey KUp [],               selectPrev 1     )
     , ( EvKey KDown [],             selectNext 1     )
     , ( EvKey KEnter [],            openSelected     )
     , ( EvKey (KASCII 'c') [MCtrl], cancelOperation  )
-    , ( EvKey (KASCII 'j') [MCtrl], switchBufferNext )
-    , ( EvKey (KASCII 'k') [MCtrl], switchBufferPrev )
+    , ( EvKey (KASCII 'j') [MMeta], switchBufferNext )
+    , ( EvKey (KASCII 'k') [MMeta], switchBufferPrev )
     ] ++
     -- Alt-[1..9], Switch to buffer N
     map (\i -> (EvKey (KASCII $ chr $ i + 48) [MMeta], switchBuffer i)) [1..9]
@@ -258,8 +335,10 @@ defaultConfig = QoropaConfig
     { databasePath = "~/.maildir"
     , folderList   = [("inbox", "tag:inbox"), ("unread", "tag:inbox and tag:unread")]
     , keys         = defaultKeys
+    , logPriority  = NOTICE
     , themeSearch  = defaultSearchTheme
     , themeFolder  = defaultFolderTheme
+    , themeLog     = defaultLogTheme
     }
 
 -- vim: set ft=haskell et ts=4 sts=4 sw=4 fdm=marker :

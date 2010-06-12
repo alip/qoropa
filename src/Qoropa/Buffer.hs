@@ -23,9 +23,11 @@ module Qoropa.Buffer
 
 import Data.IORef           (IORef)
 import Qoropa.Buffer.Folder (Folder)
+import Qoropa.Buffer.Log    (Log)
 import Qoropa.Buffer.Search (Search)
 
 data Buffer  = BufFolder (IORef Folder)
+               | BufLog (IORef Log)
                | BufSearch (IORef Search)
                | BufUnknown
 

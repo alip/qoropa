@@ -17,6 +17,7 @@ library
 
         exposed-modules:
                 Qoropa.Buffer.Folder
+                Qoropa.Buffer.Log
                 Qoropa.Buffer.Search
                 Qoropa.Buffer
                 Qoropa.UI
@@ -32,6 +33,7 @@ library
         build-depends:  base >=3 && < 5
         build-depends:  mtl >=1.1 && < 1.2
         build-depends:  MissingH >=1.0.0
+        build-depends:  hslogger >= 1.0.7
         build-depends:  notmuch >=0.1
         build-depends:  utf8-string >= 0.3 && < 0.4
         build-depends:  vty >=4.0.0 && < 5
@@ -44,6 +46,7 @@ executable qoropa
 
         other-modules:
                 Qoropa.Buffer.Folder
+                Qoropa.Buffer.Log
                 Qoropa.Buffer.Search
                 Qoropa.Buffer
                 Qoropa.UI
