@@ -78,15 +78,16 @@ data StatusMessage = StatusMessage
     }
 
 data Attributes = Attributes
-    { attrStatusBar     :: Attr
-    , attrStatusMessage :: Attr
-    , attrFill          :: Attr
-    , attrTime          :: (Attr, Attr)
-    , attrCount         :: (Attr, Attr)
-    , attrAuthor        :: (Attr, Attr)
-    , attrSubject       :: (Attr, Attr)
-    , attrTag           :: (Attr, Attr)
-    , attrDefault       :: (Attr, Attr)
+    { attrStatusBar        :: Attr
+    , attrStatusMessage    :: Attr
+    , attrFill             :: Attr
+    , attrTime             :: (Attr, Attr)
+    , attrCount            :: (Attr, Attr)
+    , attrAuthorMatched    :: (Attr, Attr)
+    , attrAuthorNonMatched :: (Attr, Attr)
+    , attrSubject          :: (Attr, Attr)
+    , attrTag              :: (Attr, Attr)
+    , attrDefault          :: (Attr, Attr)
     }
 
 data Theme = Theme
@@ -264,7 +265,7 @@ loadOne ref t = do
     newestDate <- NM.threadNewestDate t
 
     tags <- NM.threadTags t
-    taglist <- tagsToList tags
+    tagList <- tagsToList tags
     NM.tagsDestroy tags
 
     oldestDateRelative <- relativeTime oldestDate
@@ -277,7 +278,7 @@ loadOne ref t = do
                     , threadTotal      = total
                     , threadAuthors    = decodeString authors
                     , threadSubject    = decodeString subject
-                    , threadTags       = taglist
+                    , threadTags       = tagList
                     }
 
     writeIORef ref buf { bufferLines     = bufferLines buf ++ [line]

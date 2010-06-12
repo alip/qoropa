@@ -18,11 +18,29 @@
 -}
 
 module Qoropa.Notmuch
-    ( tagsToList
+    ( splitAuthors
+    , tagsToList
     ) where
 
+import Data.String.Utils        (split)
 import Codec.Binary.UTF8.String (decodeString)
-import Email.Notmuch (Tags, Tag, tagsValid, tagsGet, tagsMoveToNext)
+import Email.Notmuch            (Tags, Tag, tagsValid, tagsGet, tagsMoveToNext)
+
+splitAuthors :: String -> Int -> (String, String)
+splitAuthors s i =
+    (m', nm')
+    where
+        len  = length s
+        trs  = take i s
+        trsp = split "|" trs
+        m    = trsp !! 0
+        nm   = if length trsp > 1 then trsp !! 1 else []
+        nm'  = if not (null nm)
+            then (if len > i then nm ++ "..." else nm ++ (replicate (i + 3 - len) ' '))
+            else nm
+        m'   = if null nm
+            then (if len > i then m ++ "..." else m ++ (replicate (i + 3 - len) ' '))
+            else m
 
 tagsToList :: Tags -> IO [Tag]
 tagsToList ts = do

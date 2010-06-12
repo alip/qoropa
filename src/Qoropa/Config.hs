@@ -36,15 +36,16 @@ import qualified Data.Map as Map
 
 import Graphics.Vty
     ( Event(..), Key(..), Modifier(..), Image
-    , string, char
+    , string, char, empty_image
     , horiz_cat
     , def_attr, with_back_color, with_fore_color, with_style
     , bold
     , black, white, magenta, yellow, cyan, red, green, blue
-    , bright_blue, bright_yellow
+    , bright_black, bright_blue, bright_yellow
     )
 
-import Qoropa.Util (beep)
+import Qoropa.Notmuch (splitAuthors)
+import Qoropa.Util    (beep)
 import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
     , redraw, exit
@@ -129,27 +130,30 @@ folderDrawStatusMessage attr msg = string (Folder.attrStatusMessage attr) (Folde
 
 defaultSearchAttributes :: Search.Attributes
 defaultSearchAttributes = Search.Attributes
-    { Search.attrStatusBar     = def_attr `with_back_color` green `with_fore_color` black
-    , Search.attrStatusMessage = def_attr `with_fore_color` bright_yellow
-    , Search.attrFill          = def_attr `with_fore_color` cyan
-    , Search.attrTime          = ( def_attr `with_fore_color` white
-                                 , def_attr `with_back_color` yellow `with_fore_color` black
-                                 )
-    , Search.attrCount         = ( def_attr `with_fore_color` white
-                                 , def_attr `with_back_color` yellow `with_fore_color` black
-                                 )
-    , Search.attrAuthor        = ( def_attr `with_fore_color` green
-                                 , def_attr `with_back_color` yellow `with_fore_color` blue `with_style` bold
-                                 )
-    , Search.attrSubject       = ( def_attr `with_fore_color` white
-                                 , def_attr `with_back_color` yellow `with_fore_color` blue
-                                 )
-    , Search.attrTag           = ( def_attr `with_fore_color` magenta
-                                 , def_attr `with_back_color` yellow `with_fore_color` blue `with_style` bold
-                                 )
-    , Search.attrDefault       = ( def_attr
-                                 , def_attr `with_back_color` yellow
-                                 )
+    { Search.attrStatusBar        = def_attr `with_back_color` green `with_fore_color` black
+    , Search.attrStatusMessage    = def_attr `with_fore_color` bright_yellow
+    , Search.attrFill             = def_attr `with_fore_color` cyan
+    , Search.attrTime             = ( def_attr `with_fore_color` white
+                                    , def_attr `with_back_color` yellow `with_fore_color` black
+                                    )
+    , Search.attrCount            = ( def_attr `with_fore_color` white
+                                    , def_attr `with_back_color` yellow `with_fore_color` black
+                                    )
+    , Search.attrAuthorMatched    = ( def_attr `with_fore_color` green
+                                    , def_attr `with_back_color` yellow `with_fore_color` blue `with_style` bold
+                                    )
+    , Search.attrAuthorNonMatched = ( def_attr `with_fore_color` bright_black
+                                    , def_attr `with_back_color` yellow `with_fore_color` bright_black
+                                    )
+    , Search.attrSubject          = ( def_attr `with_fore_color` white
+                                    , def_attr `with_back_color` yellow `with_fore_color` blue
+                                    )
+    , Search.attrTag              = ( def_attr `with_fore_color` magenta
+                                    , def_attr `with_back_color` yellow `with_fore_color` blue `with_style` bold
+                                    )
+    , Search.attrDefault          = ( def_attr
+                                    , def_attr `with_back_color` yellow
+                                    )
     }
 
 defaultSearchTheme :: Search.Theme
@@ -170,7 +174,7 @@ searchDrawLine attr selected line =
     horiz_cat $ intersperse (char myDefaultAttribute ' ')
         [ string myTimeAttribute myTimeFormat
         , string myCountAttribute myCountFormat
-        , string myAuthorAttribute myAuthorFormat
+        , myAuthorString
         , string mySubjectAttribute mySubjectFormat
         , string myTagAttribute myTagFormat
         ]
@@ -181,23 +185,36 @@ searchDrawLine attr selected line =
         myTimeAttribute = if selected /= Search.lineIndex line
             then fst $ Search.attrTime attr
             else snd $ Search.attrTime attr
-        myCountAttribute   = if selected /= Search.lineIndex line
+        myCountAttribute = if selected /= Search.lineIndex line
             then fst $ Search.attrCount attr
             else snd $ Search.attrCount attr
-        myAuthorAttribute  = if selected /= Search.lineIndex line
-            then fst $ Search.attrAuthor attr
-            else snd $ Search.attrAuthor attr
         mySubjectAttribute = if selected /= Search.lineIndex line
             then fst $ Search.attrSubject attr
             else snd $ Search.attrSubject attr
-        myTagAttribute     = if selected /= Search.lineIndex line
+        myTagAttribute = if selected /= Search.lineIndex line
             then fst $ Search.attrTag attr
             else snd $ Search.attrTag attr
-        myTimeFormat       = printf "%-s" (snd $ Search.threadNewestDate line)
-        myCountFormat      = printf "[%d/%-d]" (Search.threadMatched line) (Search.threadTotal line)
-        myAuthorFormat     = printf "%-10s" (Search.threadAuthors line)
-        mySubjectFormat    = printf "%-20s" (Search.threadSubject line)
-        myTagFormat        = join " " $ map ('+' :) (Search.threadTags line)
+        myTimeFormat  = printf "%15s" (snd $ Search.threadNewestDate line)
+        myCountFormat = printf "%-7s" ( "[" ++ show (Search.threadMatched line) ++
+                                        "/" ++ show (Search.threadTotal line) ++
+                                        "]"
+                                      )
+        mySubjectFormat = printf "%-20s" (Search.threadSubject line)
+        myTagFormat     = join " " $ map ('+' :) (Search.threadTags line)
+
+        myAuthorMatchedAttribute = if selected /= Search.lineIndex line
+            then fst $ Search.attrAuthorMatched attr
+            else snd $ Search.attrAuthorMatched attr
+        myAuthorNonMatchedAttribute = if selected /= Search.lineIndex line
+            then fst $ Search.attrAuthorNonMatched attr
+            else snd $ Search.attrAuthorNonMatched attr
+        (myAuthorMatchedFormat, myAuthorNonMatchedFormat) = splitAuthors (Search.threadAuthors line) 17
+        myAuthorMatchedString    = string myAuthorMatchedAttribute myAuthorMatchedFormat
+        myAuthorNonMatchedString = string myAuthorNonMatchedAttribute myAuthorNonMatchedFormat
+        mySplitChar              = if not (null myAuthorNonMatchedFormat)
+            then char myAuthorMatchedAttribute ','
+            else empty_image
+        myAuthorString           = horiz_cat [myAuthorMatchedString, mySplitChar, myAuthorNonMatchedString]
 
 searchDrawStatusBar :: Search.Attributes -> Search.StatusBar -> Image
 searchDrawStatusBar attr bar =

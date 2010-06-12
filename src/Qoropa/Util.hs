@@ -36,7 +36,6 @@ import Control.Exception     (catch, bracket, SomeException(..))
 import Control.Monad         (filterM)
 import Data.List             ((\\))
 
-import Data.Char             (isSpace)
 import Data.Time
     ( TimeZone, UTCTime, NominalDiffTime
     , diffUTCTime, utcToLocalTime, formatTime
@@ -73,7 +72,7 @@ humanReadableTimeDiff :: TimeZone -> UTCTime -> UTCTime -> String
 humanReadableTimeDiff tz curTime oldTime =
     helper diff
     where
-        diff    = diffUTCTime curTime oldTime
+        diff = diffUTCTime curTime oldTime
 
         minutes :: NominalDiffTime -> Double
         minutes n = realToFrac $ n / 60
@@ -83,9 +82,6 @@ humanReadableTimeDiff tz curTime oldTime =
 
         days :: NominalDiffTime -> Double
         days    n = (hours n) / 24
-
-        weeks :: NominalDiffTime -> Double
-        weeks   n = (days n) / 7
 
         years :: NominalDiffTime -> Double
         years   n = (days n) / 365
@@ -98,23 +94,17 @@ humanReadableTimeDiff tz curTime oldTime =
 
         old = utcToLocalTime tz oldTime
 
-        trim = f . f
-            where f = reverse . dropWhile isSpace
+        today         = formatTime defaultTimeLocale "Today %R" old
+        yesterday     = formatTime defaultTimeLocale "Yest. %R" old
+        dayOfWeek     = formatTime defaultTimeLocale "%a. %R" old
+        thisYear      = formatTime defaultTimeLocale "%B %d" old
+        previousYears = formatTime defaultTimeLocale "%F" old
 
-        dow           = trim $! formatTime defaultTimeLocale "%l:%M %p on %A" old
-        thisYear      = trim $! formatTime defaultTimeLocale "%b %e" old
-        previousYears = trim $! formatTime defaultTimeLocale "%b %e, %Y" old
-
-        helper !d | d < 1          = "One second ago"
-                  | d < 60         = i2s d ++ " seconds ago"
-                  | minutes d < 2  = "One minute ago"
-                  | minutes d < 60 = i2s (minutes d) ++ " minutes ago"
-                  | hours d < 2    = "One hour ago"
-                  | hours d < 24   = i2s (hours d) ++ " hours ago"
-                  | days d < 5     = dow
-                  | days d < 10    = i2s (days d)  ++ " days ago"
-                  | weeks d < 2    = i2s (weeks d) ++ " week ago"
-                  | weeks d < 5    = i2s (weeks d)  ++ " weeks ago"
+        helper !d | minutes d < 2  = "One min. ago"
+                  | minutes d < 60 = i2s (minutes d) ++ " mins. ago"
+                  | hours d < 24   = today
+                  | hours d < 48   = yesterday
+                  | days d < 5     = dayOfWeek
                   | years d < 1    = thisYear
                   | otherwise      = previousYears
 
