@@ -55,7 +55,6 @@ import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
     , redraw, exit
     , selectPrev, selectNext
-    , scrollDown, scrollUp
     , openSelected, cancelOperation
     , switchBuffer, switchBufferNext, switchBufferPrev
     )
@@ -137,6 +136,9 @@ defaultLogAttributes = Log.Attributes
     , Log.attrTime          = ( def_attr `with_fore_color` white
                               , def_attr `with_back_color` yellow `with_fore_color` black
                               )
+    , Log.attrDomain        = ( def_attr `with_fore_color` magenta
+                              , def_attr `with_back_color` yellow `with_fore_color` magenta `with_style` bold
+                              )
     , Log.attrPriority      = ( def_attr `with_fore_color` green
                               , def_attr `with_back_color` yellow `with_fore_color` blue `with_style` bold
                               )
@@ -163,6 +165,7 @@ logDrawLine :: Log.Attributes -> Log.LineData -> Bool -> Image
 logDrawLine attr ld sel =
     horiz_cat $ intersperse (char myDefaultAttribute ' ')
         [ string myTimeAttribute myTimeFormat
+        , string myDomainAttribute myDomainFormat
         , string myPriorityAttribute myPriorityFormat
         , string myMessageAttribute myMessageFormat
         ]
@@ -170,9 +173,11 @@ logDrawLine attr ld sel =
         f = if sel then snd else fst
         myDefaultAttribute  = f $ Log.attrDefault attr
         myTimeAttribute     = f $ Log.attrTime attr
+        myDomainAttribute   = f $ Log.attrDomain attr
         myPriorityAttribute = f $ Log.attrPriority attr
         myMessageAttribute  = f $ Log.attrMessage attr
-        myTimeFormat        = formatTime defaultTimeLocale "%Y-%m-%d %T %z" (Log.lineDataTime ld)
+        myTimeFormat        = formatTime defaultTimeLocale "%Y-%m-%d %T %z" $ Log.lineDataTime ld
+        myDomainFormat      = printf "%-15s" $ Log.lineDataDomain ld
         myPriorityFormat    = printf "%-7s" (show $ fst $ Log.lineDataRecord ld)
         myMessageFormat     = snd $ Log.lineDataRecord ld
 
@@ -297,8 +302,6 @@ defaultKeys = Map.fromList $
     , ( EvKey (KASCII 'K') [],      selectPrev 5     )
     , ( EvKey KUp [],               selectPrev 1     )
     , ( EvKey KDown [],             selectNext 1     )
-    , ( EvKey (KASCII ' ') [],      scrollDown 1     )
-    , ( EvKey (KASCII 'n') [],      scrollUp   1     )
     , ( EvKey KEnter [],            openSelected     )
     , ( EvKey (KASCII 'c') [MCtrl], cancelOperation  )
     , ( EvKey (KASCII 'j') [MMeta], switchBufferNext )

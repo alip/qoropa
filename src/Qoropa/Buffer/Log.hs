@@ -55,6 +55,7 @@ import {-# SOURCE #-} Qoropa.UI (UIEvent(..))
 data LineData = LineData
     { lineDataTime   :: ZonedTime
     , lineDataRecord :: LogRecord
+    , lineDataDomain :: String
     }
 
 data StatusBar = StatusBar
@@ -69,6 +70,7 @@ data Attributes = Attributes
     , attrStatusMessage :: Attr
     , attrFill          :: Attr
     , attrTime          :: (Attr, Attr)
+    , attrDomain        :: (Attr, Attr)
     , attrPriority      :: (Attr, Attr)
     , attrMessage       :: (Attr, Attr)
     , attrDefault       :: (Attr, Attr)
@@ -201,13 +203,16 @@ handler (ref, lock) mvar pri =
                    }
     where
         myWriteFunc :: () -> LogRecord -> String -> IO ()
-        myWriteFunc _ record _ = do
+        myWriteFunc _ record domain = do
             now <- getZonedTime
             Lock.with lock $ do
                 buf <- readIORef ref
                 let len   = listLength $ bufferList buf
                     theme = bufferTheme buf
-                    line  = Line { lineData   = LineData { lineDataTime = now, lineDataRecord = record }
+                    line  = Line { lineData   = LineData { lineDataTime   = now
+                                                         , lineDataRecord = record
+                                                         , lineDataDomain = domain
+                                                         }
                                  , lineRender = (themeDrawLine theme) (themeAttrs theme)
                                  }
                 writeIORef ref buf { bufferList = listAppend (bufferList buf) line

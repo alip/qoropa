@@ -39,12 +39,13 @@ import System.Posix.Signals     (raiseSignal, sigTSTP)
 
 import Data.Sequence (Seq)
 import qualified Data.Sequence as Seq
-import qualified Data.Map as Map
+import qualified Data.Map as Map (lookup)
 
 import System.Log.Logger
     ( updateGlobalLogger, rootLoggerName, setHandlers, setLevel
     , debugM, noticeM
     )
+import System.Log.Handler.Simple (GenericHandler(..))
 
 import Graphics.Vty
     ( Vty, mkVtyEscDelay, reserve_display, shutdown, terminal, update
@@ -259,10 +260,13 @@ mainLoop ui = do
     modifyIORef (bufSeq ui) (\sq -> sq Seq.|> (BufLog logRef, logLock))
     writeIORef (bufCurrent ui) 0
 
+    -- Logging to stderr is bad mmkay?
+    updateGlobalLogger rootLoggerName $ setHandlers ([] :: [GenericHandler ()])
+
     -- Add the log handler
     let logHandler = Log.handler (logRef, logLock) (uiEvent ui) (configLogPriority $ userConfig ui)
-    updateGlobalLogger rootLoggerName $ setLevel (configLogPriority $ userConfig ui) . setHandlers [logHandler]
-    noticeM rootLoggerName "Initialized"
+    updateGlobalLogger "Qoropa" $ setLevel (configLogPriority $ userConfig ui) . setHandlers [logHandler]
+    noticeM "Qoropa" "Welcome to Qoropa!"
 
     forkIO $ putMVar (uiEvent ui) NewFolder
     eventLoop path
@@ -278,7 +282,7 @@ mainLoop ui = do
                         _ ->
                             case Map.lookup e (configKeys $ userConfig ui) of
                                 Just f -> f ui
-                                Nothing -> debugM rootLoggerName $ "Unhandled event: " ++ show e
+                                Nothing -> debugM "Qoropa" $ "Unhandled event: " ++ show e
                 NewFolder -> do
                     sq         <- readIORef (bufSeq ui)
                     ef         <- Folder.emptyFolder (configThemeFolder $ userConfig ui)
