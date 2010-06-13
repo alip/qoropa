@@ -304,8 +304,8 @@ defaultKeys = Map.fromList $
     , ( EvKey (KASCII 'j') [MMeta], switchBufferNext )
     , ( EvKey (KASCII 'k') [MMeta], switchBufferPrev )
     ] ++
-    -- Alt-[1..9], Switch to buffer N
-    map (\i -> (EvKey (KASCII $ chr $ i + 48) [MMeta], switchBuffer i)) [1..9]
+    -- Alt-[0..9], Switch to buffer N
+    map (\i -> (EvKey (KASCII $ chr $ i + 48) [MMeta], switchBuffer i)) [0..9]
 
 defaultConfig :: QoropaConfig
 defaultConfig = QoropaConfig

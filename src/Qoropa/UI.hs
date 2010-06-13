@@ -33,7 +33,7 @@ import Control.Concurrent       (ThreadId, forkIO, myThreadId)
 import Control.Concurrent.MVar  (MVar, newEmptyMVar, putMVar, takeMVar)
 import Control.Exception        (throwTo)
 import Control.Monad            (forever)
-import Data.IORef               (IORef, newIORef, readIORef, writeIORef)
+import Data.IORef               (IORef, newIORef, readIORef, writeIORef, modifyIORef)
 import System.Exit              (ExitCode(..))
 import System.Posix.Signals     (raiseSignal, sigTSTP)
 
@@ -98,13 +98,13 @@ currentBuffer :: UI -> IO (Buffer, Lock)
 currentBuffer ui = do
     sq <- readIORef (bufSeq ui)
     cur <- readIORef (bufCurrent ui)
-    return $ Seq.index sq (cur - 1)
+    return $ Seq.index sq cur
 
 switchBuffer :: Int -> UI -> IO ()
 switchBuffer to ui = do
     sq <- readIORef (bufSeq ui)
 
-    if to < 1 || to > Seq.length sq
+    if to < 0 || to >= Seq.length sq
         then beep
         else writeIORef (bufCurrent ui) to >> redraw ui
 
@@ -225,7 +225,7 @@ start cfg = do
     DisplayRegion x0 y0 <- display_bounds $ terminal vtyUI
     size <- newIORef (fromEnum y0, fromEnum x0)
     sq <- newIORef Seq.empty
-    cur <- newIORef 0
+    cur <- newIORef (-1)
     let ui = UI { userConfig = cfg
                 , vty        = vtyUI
                 , scrSize    = size
@@ -253,12 +253,11 @@ mainLoop ui = do
     path <- expandTilde $ configDatabasePath $ userConfig ui
 
     -- Initialize the log buffer
-    sq <- readIORef $ bufSeq ui
     el <- Log.emptyLog $ configThemeLog $ userConfig ui
     logRef  <- newIORef el
     logLock <- Lock.new
-    writeIORef (bufSeq ui) (sq Seq.|> (BufLog logRef, logLock))
-    writeIORef (bufCurrent ui) (Seq.length sq + 1)
+    modifyIORef (bufSeq ui) (\sq -> sq Seq.|> (BufLog logRef, logLock))
+    writeIORef (bufCurrent ui) 0
 
     -- Add the log handler
     let logHandler = Log.handler (logRef, logLock) (uiEvent ui) (configLogPriority $ userConfig ui)
@@ -281,21 +280,21 @@ mainLoop ui = do
                                 Just f -> f ui
                                 Nothing -> debugM rootLoggerName $ "Unhandled event: " ++ show e
                 NewFolder -> do
-                    sq <- readIORef (bufSeq ui)
-                    ef <- Folder.emptyFolder (configThemeFolder $ userConfig ui)
+                    sq         <- readIORef (bufSeq ui)
+                    ef         <- Folder.emptyFolder (configThemeFolder $ userConfig ui)
                     folderRef  <- newIORef ef
                     folderLock <- Lock.new
-                    writeIORef (bufSeq ui) (sq Seq.|> (BufFolder folderRef, folderLock))
-                    writeIORef (bufCurrent ui) (Seq.length sq + 1)
+                    writeIORef (bufSeq ui) $ sq Seq.|> (BufFolder folderRef, folderLock)
+                    writeIORef (bufCurrent ui) $ Seq.length sq
                     forkIO $ Folder.new (folderRef, folderLock) (uiEvent ui) path (configFolderList $ userConfig ui)
                     return ()
                 NewSearch term -> do
-                    sq <- readIORef (bufSeq ui)
-                    es <- Search.emptySearch (configThemeSearch $ userConfig ui)
+                    sq         <- readIORef (bufSeq ui)
+                    es         <- Search.emptySearch (configThemeSearch $ userConfig ui)
                     searchRef  <- newIORef es
                     searchLock <- Lock.new
-                    writeIORef (bufSeq ui) (sq Seq.|> (BufSearch searchRef, searchLock))
-                    writeIORef (bufCurrent ui) (Seq.length sq + 1)
+                    writeIORef (bufSeq ui) $ sq Seq.|> (BufSearch searchRef, searchLock)
+                    writeIORef (bufCurrent ui) $ Seq.length sq
                     forkIO $ Search.new (searchRef, searchLock) (uiEvent ui) path term
                     return ()
                 Redraw -> redraw ui
