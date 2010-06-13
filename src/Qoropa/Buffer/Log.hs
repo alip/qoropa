@@ -18,32 +18,52 @@
 -}
 
 module Qoropa.Buffer.Log
-    ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..), Log(..)
+    ( Attributes(..), Theme(..), LineData(..), StatusBar(..), StatusMessage(..), Log(..)
     , emptyLog
     , paint, handler
     , scrollUp, scrollDown
     , selectPrev, selectNext
     ) where
 
-import Control.Concurrent        (forkIO)
-import Control.Concurrent.MVar   (MVar, newEmptyMVar, putMVar)
-import Control.Monad             (when)
-import Data.IORef                (IORef, readIORef, writeIORef)
-import Data.Time                 (ZonedTime, getZonedTime)
+import Control.Concurrent      (forkIO)
+import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar)
+import Data.IORef              (IORef, readIORef, writeIORef)
+import Data.Maybe              (isJust, fromJust)
+import Data.Time               (ZonedTime, getZonedTime)
 
 import System.Log                (Priority, LogRecord)
 import System.Log.Handler.Simple (GenericHandler(..))
 
 import Graphics.Vty
     ( Attr, Image, Picture
-    , string, vert_cat
-    , pic_for_image
+    , string, vert_cat, pic_for_image
     )
 
 import Qoropa.Lock  (Lock)
 import qualified Qoropa.Lock as Lock (with)
 
+import Qoropa.Widget.List
+    ( Line(..), List(..)
+    , emptyList
+    , listLength, listAppend, listAppendLeft, listRender
+    , listScrollUp, listScrollDown
+    , listSelectPrev, listSelectNext
+    , toRegion
+    )
+
 import {-# SOURCE #-} Qoropa.UI (UIEvent(..))
+
+data LineData = LineData
+    { lineDataTime   :: ZonedTime
+    , lineDataRecord :: LogRecord
+    }
+
+data StatusBar = StatusBar
+    { sBarCurrent :: Int
+    , sBarTotal   :: Int
+    }
+
+data StatusMessage = StatusMessage { sMessage :: String }
 
 data Attributes = Attributes
     { attrStatusBar     :: Attr
@@ -57,31 +77,16 @@ data Attributes = Attributes
 
 data Theme = Theme
     { themeAttrs              :: Attributes
-    , themeFill               :: String
-    , themeDrawLine           :: Attributes -> Int -> Line -> Image
+    , themeFill               :: Maybe String
+    , themeDrawLine           :: Attributes -> LineData -> Bool -> Image
     , themeDrawStatusBar      :: Attributes -> StatusBar -> Image
     , themeDrawStatusMessage  :: Attributes -> StatusMessage -> Image
     , themeFormatHitTheTop    :: IO String
     , themeFormatHitTheBottom :: IO String
     }
 
-data Line = Line
-    { lineIndex   :: Int
-    , logTime     :: ZonedTime
-    , logRecord   :: LogRecord
-    }
-
-data StatusBar = StatusBar
-    { sBarCurrent :: Int
-    , sBarTotal   :: Int
-    }
-
-data StatusMessage = StatusMessage { sMessage :: String }
-
 data Log = Log
-    { bufferFirst         :: Int
-    , bufferSelected      :: Int
-    , bufferLines         :: [Line]
+    { bufferList          :: List LineData
     , bufferStatusBar     :: StatusBar
     , bufferStatusMessage :: StatusMessage
     , bufferTheme         :: Theme
@@ -90,7 +95,7 @@ data Log = Log
 
 emptyStatusBar :: StatusBar
 emptyStatusBar = StatusBar
-    { sBarCurrent = 1
+    { sBarCurrent = 0
     , sBarTotal   = 0
     }
 
@@ -101,114 +106,89 @@ emptyLog :: Theme -> IO Log
 emptyLog theme = do
     cancelLog <- newEmptyMVar
     return Log
-        { bufferFirst         = 1
-        , bufferSelected      = 1
-        , bufferLines         = []
+        { bufferList          = emptyList { listLineFill = fill }
         , bufferStatusBar     = emptyStatusBar
         , bufferStatusMessage = emptyStatusMessage
         , bufferTheme         = theme
         , bufferCancel        = cancelLog
         }
+    where
+        fill = if isJust (themeFill theme)
+            then Just (string (attrFill $ themeAttrs theme) (fromJust $ themeFill theme))
+            else Nothing
 
 paint :: Log -> Int -> Picture
 paint buf height =
-    pic_for_image $ vert_cat $ lns ++ fill ++ [bar, msg]
+    pic_for_image $ vert_cat $ lns ++ [bar, msg]
     where
-        myFirst             = bufferFirst buf
-        mySelected          = bufferSelected buf
-        myLines             = bufferLines buf
         myTheme             = bufferTheme buf
         myAttr              = themeAttrs myTheme
-        myDrawLine          = themeDrawLine myTheme
         myDrawStatusBar     = themeDrawStatusBar myTheme
         myDrawStatusMessage = themeDrawStatusMessage myTheme
-
-        lns = take (height - 2) $ drop (myFirst - 1) $ map (myDrawLine myAttr mySelected) myLines
-
-        len = length lns
-        fill  = if len < height - 2
-            then replicate (height - 2 - len) (string (attrFill myAttr) (themeFill myTheme))
-            else []
-
-        bar   = myDrawStatusBar myAttr (bufferStatusBar buf)
-        msg   = myDrawStatusMessage myAttr (bufferStatusMessage buf)
+        lns = listRender (bufferList buf) (toRegion (height - 2) 0)
+        bar = myDrawStatusBar myAttr (bufferStatusBar buf)
+        msg = myDrawStatusMessage myAttr (bufferStatusMessage buf)
 
 scrollUp :: (IORef Log, Lock) -> Int -> IO ()
-scrollUp (ref, lock) count = Lock.with lock $ scrollUp' ref count
+scrollUp (ref, lock) cnt = Lock.with lock $ scrollUp' ref cnt
 
 scrollUp' :: IORef Log -> Int -> IO ()
-scrollUp' ref count = do
+scrollUp' ref cnt = do
     buf <- readIORef ref
-    let first = bufferFirst buf - count
-    let sel   = bufferSelected buf
 
-    if first > 0
-        then writeIORef ref buf { bufferFirst     = first
-                                , bufferSelected  = sel - count + 1
-                                , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel - count + 1 }
-                                }
-        else do
+    case listScrollUp (bufferList buf) cnt  of
+        Just ls -> writeIORef ref buf { bufferList      = ls
+                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                                      }
+        Nothing -> do
             msg <- themeFormatHitTheTop (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 scrollDown :: (IORef Log, Lock) -> Int -> Int -> IO ()
-scrollDown (ref, lock) cols count = Lock.with lock $ scrollDown' ref cols count
+scrollDown (ref, lock) cols cnt = Lock.with lock $ scrollDown' ref cols cnt
 
 scrollDown' :: IORef Log -> Int -> Int -> IO ()
-scrollDown' ref cols count = do
+scrollDown' ref cols cnt = do
     buf <- readIORef ref
-    let len   = length $ bufferLines buf
-    let first = bufferFirst buf + count
-    let sel   = bufferSelected buf
 
-    if first + cols - 3 <= len
-        then writeIORef ref buf { bufferFirst = first
-                                , bufferSelected = sel + count - 1
-                                , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel + count - 1}
-                                }
-        else do
+    case listScrollDown (bufferList buf) (toRegion cols 0) cnt of
+        Just ls -> writeIORef ref buf { bufferList      = ls
+                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                                      }
+        Nothing -> do
             msg <- themeFormatHitTheBottom (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 selectPrev :: (IORef Log, Lock) -> Int -> IO ()
-selectPrev (ref, lock) count = Lock.with lock $ selectPrev' ref count
+selectPrev (ref, lock) cnt = Lock.with lock $ selectPrev' ref cnt
 
 selectPrev' :: IORef Log -> Int -> IO ()
-selectPrev' ref count = do
+selectPrev' ref cnt = do
     buf <- readIORef ref
-    let first = bufferFirst buf
-    let sel   = bufferSelected buf
 
-    if sel - count >= 1
-        then do
-            writeIORef ref buf { bufferSelected = sel - count
-                               , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel - count }
-                               }
-            when (sel - count < first) $ scrollUp' ref count
-        else do
+    case listSelectPrev (bufferList buf) cnt of
+        Just ls -> writeIORef ref buf { bufferList      = ls
+                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                                      }
+        Nothing -> do
             msg <- themeFormatHitTheTop (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 selectNext :: (IORef Log, Lock) -> Int -> Int -> IO ()
-selectNext (ref, lock) cols count = Lock.with lock $ selectNext' ref cols count
+selectNext (ref, lock) cols cnt = Lock.with lock $ selectNext' ref cols cnt
 
 selectNext' :: IORef Log -> Int -> Int -> IO ()
-selectNext' ref cols count = do
+selectNext' ref cols cnt = do
     buf <- readIORef ref
-    let sel = bufferSelected buf
-    let len = length $ bufferLines buf
-    let lst = bufferFirst buf + cols - 3
 
-    if sel + count <= len
-        then do
-            writeIORef ref buf { bufferSelected  = sel + count
-                               , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel + count }
-                               }
-            when (sel + count > lst) $ scrollDown' ref cols count
-        else do
+    case listSelectNext (bufferList buf) (toRegion cols 0) cnt of
+        Just ls -> writeIORef ref buf { bufferList      = ls
+                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                                      }
+        Nothing -> do
             msg <- themeFormatHitTheBottom (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
@@ -222,17 +202,16 @@ handler (ref, lock) mvar pri =
                    }
     where
         myWriteFunc :: () -> LogRecord -> String -> IO ()
-        myWriteFunc _ record _ =
+        myWriteFunc _ record _ = do
+            now <- getZonedTime
             Lock.with lock $ do
-                now <- getZonedTime
                 buf <- readIORef ref
-                let len  = length $ bufferLines buf
-                    line = Line { lineIndex  = len + 1
-                                , logTime    = now
-                                , logRecord  = record
-                                }
-
-                writeIORef ref buf { bufferLines = bufferLines buf ++ [line]
+                let len   = listLength $ bufferList buf
+                    theme = bufferTheme buf
+                    line  = Line { lineData   = LineData { lineDataTime = now, lineDataRecord = record }
+                                 , lineRender = (themeDrawLine theme) (themeAttrs theme)
+                                 }
+                writeIORef ref buf { bufferList = listAppendLeft (bufferList buf) line
                                    , bufferStatusBar = (bufferStatusBar buf) { sBarTotal = len + 1}
                                    }
                 forkIO $ putMVar mvar Redraw

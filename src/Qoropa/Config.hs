@@ -55,16 +55,17 @@ import {-# SOURCE #-} Qoropa.UI
     ( UI(..)
     , redraw, exit
     , selectPrev, selectNext
+    , scrollDown, scrollUp
     , openSelected, cancelOperation
     , switchBuffer, switchBufferNext, switchBufferPrev
     )
 
 import qualified Qoropa.Buffer.Folder as Folder
-    ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
+    ( Attributes(..), Theme(..), LineData(..), StatusBar(..), StatusMessage(..) )
 import qualified Qoropa.Buffer.Log as Log
-    ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
+    ( Attributes(..), Theme(..), LineData(..), StatusBar(..), StatusMessage(..) )
 import qualified Qoropa.Buffer.Search as Search
-    ( Attributes(..), Theme(..), Line(..), StatusBar(..), StatusMessage(..) )
+    ( Attributes(..), Theme(..), LineData(..), StatusBar(..), StatusMessage(..) )
 
 defaultFolderAttributes :: Folder.Attributes
 defaultFolderAttributes = Folder.Attributes
@@ -88,7 +89,7 @@ defaultFolderAttributes = Folder.Attributes
 defaultFolderTheme :: Folder.Theme
 defaultFolderTheme = Folder.Theme
     { Folder.themeAttrs              = defaultFolderAttributes
-    , Folder.themeFill               = "~"
+    , Folder.themeFill               = Just "~"
     , Folder.themeDrawLine           = folderDrawLine
     , Folder.themeDrawStatusBar      = folderDrawStatusBar
     , Folder.themeDrawStatusMessage  = folderDrawStatusMessage
@@ -98,29 +99,22 @@ defaultFolderTheme = Folder.Theme
     , Folder.themeFormatLoadingDone  = (\(name, term) -> return $ "Done loading " ++ name ++ " ( " ++ term ++ " )")
     }
 
-folderDrawLine :: Folder.Attributes -> Int -> Folder.Line -> Image
-folderDrawLine attr selected line =
+folderDrawLine :: Folder.Attributes -> Folder.LineData -> Bool -> Image
+folderDrawLine attr ld sel =
     horiz_cat $ intersperse (char myDefaultAttribute ' ')
         [ string myNameAttribute myNameFormat
         , string myCountAttribute myCountFormat
         , string myTermAttribute myTermFormat
         ]
     where
-        myDefaultAttribute = if selected /= Folder.lineIndex line
-            then fst $ Folder.attrDefault attr
-            else snd $ Folder.attrDefault attr
-        myNameAttribute = if selected /= Folder.lineIndex line
-            then fst $ Folder.attrName attr
-            else snd $ Folder.attrName attr
-        myTermAttribute = if selected /= Folder.lineIndex line
-            then fst $ Folder.attrTerm attr
-            else snd $ Folder.attrTerm attr
-        myCountAttribute = if selected /= Folder.lineIndex line
-            then fst $ Folder.attrCount attr
-            else snd $ Folder.attrCount attr
-        myNameFormat  = printf "%-20s" (Folder.folderName line)
-        myCountFormat = printf "%7d" (Folder.folderCount line)
-        myTermFormat  = Folder.folderTerm line
+        f = if sel then snd else fst
+        myDefaultAttribute = f $ Folder.attrDefault attr
+        myNameAttribute    = f $ Folder.attrName attr
+        myTermAttribute    = f $ Folder.attrTerm attr
+        myCountAttribute   = f $ Folder.attrCount attr
+        myNameFormat  = printf "%-20s" (Folder.folderName ld)
+        myCountFormat = printf "%7d" (Folder.folderCount ld)
+        myTermFormat  = Folder.folderTerm ld
 
 folderDrawStatusBar :: Folder.Attributes -> Folder.StatusBar -> Image
 folderDrawStatusBar attr bar =
@@ -128,7 +122,7 @@ folderDrawStatusBar attr bar =
     where
         myAttribute = Folder.attrStatusBar attr
         myFormat  = "[Qoropa.Buffer.Folder] " ++
-            "[" ++ show (Folder.sBarCurrent bar) ++
+            "[" ++ show (Folder.sBarCurrent bar + 1) ++
             "/" ++ show (Folder.sBarTotal bar) ++ "]"
 
 
@@ -157,7 +151,7 @@ defaultLogAttributes = Log.Attributes
 defaultLogTheme :: Log.Theme
 defaultLogTheme = Log.Theme
     { Log.themeAttrs              = defaultLogAttributes
-    , Log.themeFill               = "~"
+    , Log.themeFill               = Just "~"
     , Log.themeDrawLine           = logDrawLine
     , Log.themeDrawStatusBar      = logDrawStatusBar
     , Log.themeDrawStatusMessage  = logDrawStatusMessage
@@ -165,29 +159,22 @@ defaultLogTheme = Log.Theme
     , Log.themeFormatHitTheBottom = beep >> return "Hit the bottom!"
     }
 
-logDrawLine :: Log.Attributes -> Int -> Log.Line -> Image
-logDrawLine attr selected line =
+logDrawLine :: Log.Attributes -> Log.LineData -> Bool -> Image
+logDrawLine attr ld sel =
     horiz_cat $ intersperse (char myDefaultAttribute ' ')
         [ string myTimeAttribute myTimeFormat
         , string myPriorityAttribute myPriorityFormat
         , string myMessageAttribute myMessageFormat
         ]
     where
-        myDefaultAttribute = if selected /= Log.lineIndex line
-            then fst $ Log.attrDefault attr
-            else snd $ Log.attrDefault attr
-        myTimeAttribute = if selected /= Log.lineIndex line
-            then fst $ Log.attrTime attr
-            else snd $ Log.attrTime attr
-        myPriorityAttribute = if selected /= Log.lineIndex line
-            then fst $ Log.attrPriority attr
-            else snd $ Log.attrPriority attr
-        myMessageAttribute = if selected /= Log.lineIndex line
-            then fst $ Log.attrMessage attr
-            else snd $ Log.attrMessage attr
-        myTimeFormat     = formatTime defaultTimeLocale "%Y-%m-%d %T %z" (Log.logTime line)
-        myPriorityFormat = printf "%-7s" (show $ fst $ Log.logRecord line)
-        myMessageFormat  = snd $ Log.logRecord line
+        f = if sel then snd else fst
+        myDefaultAttribute  = f $ Log.attrDefault attr
+        myTimeAttribute     = f $ Log.attrTime attr
+        myPriorityAttribute = f $ Log.attrPriority attr
+        myMessageAttribute  = f $ Log.attrMessage attr
+        myTimeFormat        = formatTime defaultTimeLocale "%Y-%m-%d %T %z" (Log.lineDataTime ld)
+        myPriorityFormat    = printf "%-7s" (show $ fst $ Log.lineDataRecord ld)
+        myMessageFormat     = snd $ Log.lineDataRecord ld
 
 logDrawStatusBar :: Log.Attributes -> Log.StatusBar -> Image
 logDrawStatusBar attr bar =
@@ -195,7 +182,7 @@ logDrawStatusBar attr bar =
     where
         myAttribute = Log.attrStatusBar attr
         myFormat  = "[Qoropa.Buffer.Log] " ++
-            "[" ++ show (Log.sBarCurrent bar) ++
+            "[" ++ show (Log.sBarCurrent bar + 1) ++
             "/" ++ show (Log.sBarTotal bar) ++ "]"
 
 logDrawStatusMessage :: Log.Attributes -> Log.StatusMessage -> Image
@@ -232,7 +219,7 @@ defaultSearchAttributes = Search.Attributes
 defaultSearchTheme :: Search.Theme
 defaultSearchTheme = Search.Theme
     { Search.themeAttrs              = defaultSearchAttributes
-    , Search.themeFill               = "~"
+    , Search.themeFill               = Just "~"
     , Search.themeDrawLine           = searchDrawLine
     , Search.themeDrawStatusBar      = searchDrawStatusBar
     , Search.themeDrawStatusMessage  = searchDrawStatusMessage
@@ -242,8 +229,8 @@ defaultSearchTheme = Search.Theme
     , Search.themeFormatLoadingDone  = (\term -> return $ "Done loading " ++ term)
     }
 
-searchDrawLine :: Search.Attributes -> Int -> Search.Line -> Image
-searchDrawLine attr selected line =
+searchDrawLine :: Search.Attributes -> Search.LineData -> Bool -> Image
+searchDrawLine attr ld sel =
     horiz_cat $ intersperse (char myDefaultAttribute ' ')
         [ string myTimeAttribute myTimeFormat
         , string myCountAttribute myCountFormat
@@ -252,42 +239,29 @@ searchDrawLine attr selected line =
         , string myTagAttribute myTagFormat
         ]
     where
-        myDefaultAttribute = if selected /= Search.lineIndex line
-            then fst $ Search.attrDefault attr
-            else snd $ Search.attrDefault attr
-        myTimeAttribute = if selected /= Search.lineIndex line
-            then fst $ Search.attrTime attr
-            else snd $ Search.attrTime attr
-        myCountAttribute = if selected /= Search.lineIndex line
-            then fst $ Search.attrCount attr
-            else snd $ Search.attrCount attr
-        mySubjectAttribute = if selected /= Search.lineIndex line
-            then fst $ Search.attrSubject attr
-            else snd $ Search.attrSubject attr
-        myTagAttribute = if selected /= Search.lineIndex line
-            then fst $ Search.attrTag attr
-            else snd $ Search.attrTag attr
-        myTimeFormat  = printf "%15s" (snd $ Search.threadNewestDate line)
-        myCountFormat = printf "%-10s" ( "[" ++ show (Search.threadMatched line) ++
-                                         "/" ++ show (Search.threadTotal line) ++
+        f = if sel then snd else fst
+        myDefaultAttribute = f $ Search.attrDefault attr
+        myTimeAttribute    = f $ Search.attrTime attr
+        myCountAttribute   = f $ Search.attrCount attr
+        mySubjectAttribute = f $ Search.attrSubject attr
+        myTagAttribute     = f $ Search.attrTag attr
+        myTimeFormat  = printf "%15s" (snd $ Search.threadNewestDate ld)
+        myCountFormat = printf "%-10s" ( "[" ++ show (Search.threadMatched ld) ++
+                                         "/" ++ show (Search.threadTotal ld) ++
                                          "]"
                                        )
-        mySubjectFormat = printf "%-20s" (Search.threadSubject line)
-        myTagFormat     = join " " $ map ('+' :) (Search.threadTags line)
+        mySubjectFormat = printf "%-20s" (Search.threadSubject ld)
+        myTagFormat     = join " " $ map ('+' :) (Search.threadTags ld)
 
-        myAuthorMatchedAttribute = if selected /= Search.lineIndex line
-            then fst $ Search.attrAuthorMatched attr
-            else snd $ Search.attrAuthorMatched attr
-        myAuthorNonMatchedAttribute = if selected /= Search.lineIndex line
-            then fst $ Search.attrAuthorNonMatched attr
-            else snd $ Search.attrAuthorNonMatched attr
-        (myAuthorMatchedFormat, myAuthorNonMatchedFormat) = splitAuthors (Search.threadAuthors line) 17
-        myAuthorMatchedString    = string myAuthorMatchedAttribute myAuthorMatchedFormat
-        myAuthorNonMatchedString = string myAuthorNonMatchedAttribute myAuthorNonMatchedFormat
-        mySplitChar              = if not (null myAuthorNonMatchedFormat)
+        myAuthorMatchedAttribute    = f $ Search.attrAuthorMatched attr
+        myAuthorNonMatchedAttribute = f $ Search.attrAuthorNonMatched attr
+        (myAuthorMatchedFormat, myAuthorNonMatchedFormat) = splitAuthors (Search.threadAuthors ld) 17
+        myAuthorMatchedString       = string myAuthorMatchedAttribute myAuthorMatchedFormat
+        myAuthorNonMatchedString    = string myAuthorNonMatchedAttribute myAuthorNonMatchedFormat
+        mySplitChar                 = if not (null myAuthorNonMatchedFormat)
             then char myAuthorMatchedAttribute ','
             else empty_image
-        myAuthorString           = horiz_cat [myAuthorMatchedString, mySplitChar, myAuthorNonMatchedString]
+        myAuthorString              = horiz_cat [myAuthorMatchedString, mySplitChar, myAuthorNonMatchedString]
 
 searchDrawStatusBar :: Search.Attributes -> Search.StatusBar -> Image
 searchDrawStatusBar attr bar =
@@ -296,7 +270,7 @@ searchDrawStatusBar attr bar =
         myAttribute = Search.attrStatusBar attr
         myFormat  = "[Qoropa.Buffer.Search] " ++
             Search.sBarTerm bar ++
-            " [" ++ show (Search.sBarCurrent bar) ++
+            " [" ++ show (Search.sBarCurrent bar + 1) ++
             "/" ++ show (Search.sBarTotal bar) ++ "]"
 
 searchDrawStatusMessage :: Search.Attributes -> Search.StatusMessage -> Image
@@ -323,6 +297,8 @@ defaultKeys = Map.fromList $
     , ( EvKey (KASCII 'K') [],      selectPrev 5     )
     , ( EvKey KUp [],               selectPrev 1     )
     , ( EvKey KDown [],             selectNext 1     )
+    , ( EvKey (KASCII ' ') [],      scrollDown 1     )
+    , ( EvKey (KASCII 'n') [],      scrollUp   1     )
     , ( EvKey KEnter [],            openSelected     )
     , ( EvKey (KASCII 'c') [MCtrl], cancelOperation  )
     , ( EvKey (KASCII 'j') [MMeta], switchBufferNext )

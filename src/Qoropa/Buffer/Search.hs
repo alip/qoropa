@@ -18,28 +18,31 @@
 -}
 
 module Qoropa.Buffer.Search
-    ( Attributes(..), StatusBar(..), StatusMessage(..), Line(..), Theme(..), Search(..)
+    ( Attributes(..), Theme(..), StatusBar(..), StatusMessage(..), LineData(..), Search(..)
     , emptySearch
     , paint, new, cancelLoad
     , scrollUp, scrollDown
     , selectPrev, selectNext
     ) where
 
-import Control.Concurrent.MVar  (MVar, newEmptyMVar, putMVar, tryTakeMVar, tryPutMVar)
-import Control.Monad            (when, unless)
-import Data.IORef               (IORef, readIORef, writeIORef)
-import Foreign.C.Types          (CTime)
+import Control.Concurrent.MVar (MVar, newEmptyMVar, putMVar, tryTakeMVar, tryPutMVar)
+import Control.Monad           (when, unless)
+import Data.IORef              (IORef, readIORef, writeIORef)
+import Data.Maybe              (isJust, fromJust)
+import Foreign.C.Types         (CTime)
+
+import System.Log.Logger       (rootLoggerName, debugM)
 
 import Codec.Binary.UTF8.String (decodeString)
 
 import Graphics.Vty
     ( Attr, Image, Picture
-    , string, vert_cat
-    , pic_for_image
+    , string, vert_cat, pic_for_image
     )
 
 import qualified Email.Notmuch as NM
-    ( DatabaseOpenMode(..), databaseOpen, databaseClose
+    ( DatabaseOpenMode(..)
+    , databaseOpen, databaseClose
     , queryCreate, querySearchThreads
     , Threads, threadsValid, threadsGet, threadsMoveToNext
     , Thread, threadMatchedMessages, threadTotalMessages
@@ -54,11 +57,19 @@ import Qoropa.Util    (relativeTime)
 import Qoropa.Lock (Lock)
 import qualified Qoropa.Lock as Lock (with)
 
+import Qoropa.Widget.List
+    ( Line(..), List(..)
+    , emptyList
+    , listLength, listAppend, listRender
+    , listScrollUp, listScrollDown
+    , listSelectPrev, listSelectNext
+    , toRegion
+    )
+
 import {-# SOURCE #-} Qoropa.UI (UIEvent(..))
 
-data Line = Line
-    { lineIndex        :: Int
-    , threadOldestDate :: (CTime, String)
+data LineData = LineData
+    { threadOldestDate :: (CTime, String)
     , threadNewestDate :: (CTime, String)
     , threadMatched    :: Integer
     , threadTotal      :: Integer
@@ -92,8 +103,8 @@ data Attributes = Attributes
 
 data Theme = Theme
     { themeAttrs              :: Attributes
-    , themeFill               :: String
-    , themeDrawLine           :: Attributes -> Int -> Line -> Image
+    , themeFill               :: Maybe String
+    , themeDrawLine           :: Attributes -> LineData -> Bool -> Image
     , themeDrawStatusBar      :: Attributes -> StatusBar -> Image
     , themeDrawStatusMessage  :: Attributes -> StatusMessage -> Image
     , themeFormatHitTheTop    :: IO String
@@ -103,9 +114,7 @@ data Theme = Theme
     }
 
 data Search = Search
-    { bufferFirst         :: Int
-    , bufferSelected      :: Int
-    , bufferLines         :: [Line]
+    { bufferList          :: List LineData
     , bufferStatusBar     :: StatusBar
     , bufferStatusMessage :: StatusMessage
     , bufferTheme         :: Theme
@@ -115,7 +124,7 @@ data Search = Search
 emptyStatusBar :: StatusBar
 emptyStatusBar = StatusBar
     { sBarTerm    = ""
-    , sBarCurrent = 1
+    , sBarCurrent = 0
     , sBarTotal   = 0
     }
 
@@ -126,114 +135,94 @@ emptySearch :: Theme -> IO Search
 emptySearch theme = do
     cancelSearch <- newEmptyMVar
     return Search
-        { bufferFirst         = 1
-        , bufferSelected      = 1
-        , bufferLines         = []
+        { bufferList          = emptyList { listLineFill = fill }
         , bufferStatusBar     = emptyStatusBar
         , bufferStatusMessage = emptyStatusMessage
         , bufferTheme         = theme
         , bufferCancel        = cancelSearch
         }
+    where
+        fill = if isJust (themeFill theme)
+            then Just (string (attrFill $ themeAttrs theme) (fromJust $ themeFill theme))
+            else Nothing
 
 paint :: Search -> Int -> Picture
 paint buf height =
-    pic_for_image $ vert_cat $ lns ++ fill ++ [bar, msg]
+    pic_for_image $ vert_cat $ lns ++ [bar, msg]
     where
-        myFirst             = bufferFirst buf
-        mySelected          = bufferSelected buf
-        myLines             = bufferLines buf
         myTheme             = bufferTheme buf
         myAttr              = themeAttrs myTheme
-        myDrawLine          = themeDrawLine myTheme
         myDrawStatusBar     = themeDrawStatusBar myTheme
         myDrawStatusMessage = themeDrawStatusMessage myTheme
-
-        lns = take (height - 2) $ drop (myFirst - 1) $ map (myDrawLine myAttr mySelected) myLines
-
-        len = length lns
-        fill  = if len < height - 2
-            then replicate (height - 2 - len) (string (attrFill myAttr) (themeFill myTheme))
-            else []
-
-        bar   = myDrawStatusBar myAttr (bufferStatusBar buf)
-        msg   = myDrawStatusMessage myAttr (bufferStatusMessage buf)
+        lns = listRender (bufferList buf) (toRegion (height - 2) 0)
+        bar = myDrawStatusBar myAttr (bufferStatusBar buf)
+        msg = myDrawStatusMessage myAttr (bufferStatusMessage buf)
 
 scrollUp :: (IORef Search, Lock) -> Int -> IO ()
-scrollUp (ref, lock) count = Lock.with lock (scrollUp' ref count)
+scrollUp (ref, lock) cnt = Lock.with lock $ scrollUp' ref cnt
 
 scrollUp' :: IORef Search -> Int -> IO ()
-scrollUp' ref count = do
+scrollUp' ref cnt = do
     buf <- readIORef ref
-    let first = bufferFirst buf - count
-    let sel   = bufferSelected buf
 
-    if first > 0
-        then writeIORef ref buf { bufferFirst     = first
-                                , bufferSelected  = sel - count + 1
-                                , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel - count + 1 }
-                                }
-        else do
+    case listScrollUp (bufferList buf) cnt  of
+        Just ls -> writeIORef ref buf { bufferList      = ls
+                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                                      }
+        Nothing -> do
             msg <- themeFormatHitTheTop (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 scrollDown :: (IORef Search, Lock) -> Int -> Int -> IO ()
-scrollDown (ref, lock) cols count = Lock.with lock (scrollDown' ref cols count)
+scrollDown (ref, lock) cols cnt = Lock.with lock $ scrollDown' ref cols cnt
 
 scrollDown' :: IORef Search -> Int -> Int -> IO ()
-scrollDown' ref cols count = do
+scrollDown' ref cols cnt = do
     buf <- readIORef ref
-    let len   = length $ bufferLines buf
-    let first = bufferFirst buf + count
-    let sel   = bufferSelected buf
 
-    if first + cols - 3 <= len
-        then writeIORef ref buf { bufferFirst = first
-                                , bufferSelected = sel + count - 1
-                                , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel + count - 1}
-                                }
-        else do
+    case listScrollDown (bufferList buf) (toRegion cols 0) cnt of
+        Just ls -> writeIORef ref buf { bufferList      = ls
+                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                                      }
+        Nothing -> do
             msg <- themeFormatHitTheBottom (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 selectPrev :: (IORef Search, Lock) -> Int -> IO ()
-selectPrev (ref, lock) count = Lock.with lock (selectPrev' ref count)
+selectPrev (ref, lock) cnt = Lock.with lock $ selectPrev' ref cnt
 
 selectPrev' :: IORef Search -> Int -> IO ()
-selectPrev' ref count = do
+selectPrev' ref cnt = do
     buf <- readIORef ref
-    let first = bufferFirst buf
-    let sel   = bufferSelected buf
 
-    if sel - count >= 1
-        then do
-            writeIORef ref buf { bufferSelected = sel - count
-                               , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel - count }
-                               }
-            when (sel - count < first) $ scrollUp' ref count
-        else do
+    case listSelectPrev (bufferList buf) cnt of
+        Just ls -> writeIORef ref buf { bufferList      = ls
+                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                                      }
+        Nothing -> do
             msg <- themeFormatHitTheTop (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
 
 selectNext :: (IORef Search, Lock) -> Int -> Int -> IO ()
-selectNext (ref, lock) cols count = Lock.with lock (selectNext' ref cols count)
+selectNext (ref, lock) cols cnt = Lock.with lock $ selectNext' ref cols cnt
 
 selectNext' :: IORef Search -> Int -> Int -> IO ()
-selectNext' ref cols count = do
+selectNext' ref cols cnt = do
     buf <- readIORef ref
-    let sel = bufferSelected buf
-    let len = length $ bufferLines buf
-    let lst = bufferFirst buf + cols - 3
 
-    if sel + count <= len
-        then do
-            writeIORef ref buf { bufferSelected  = sel + count
-                               , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = sel + count }
-                               }
-            when (sel + count > lst) $ scrollDown' ref cols count
-        else do
+    case listSelectNext (bufferList buf) (toRegion cols 0) cnt of
+        Just ls -> do
+            debugM rootLoggerName $ "old: " ++ show (listSelected $ bufferList buf) ++ " " ++
+                                    "new: " ++ show (listSelected ls) ++ " " ++
+                                    "oldhead: " ++ show (listDisplayHead $ bufferList buf) ++ " " ++
+                                    "newhead: " ++ show (listDisplayHead ls)
+            writeIORef ref buf { bufferList      = ls
+                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                                      }
+        Nothing -> do
             msg <- themeFormatHitTheBottom (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
                                }
@@ -255,7 +244,6 @@ isCancelledLoad ref = do
 loadOne :: IORef Search -> NM.Thread -> IO ()
 loadOne ref t = do
     buf <- readIORef ref
-    let len = length $ bufferLines buf
 
     matched    <- NM.threadMatchedMessages t
     total      <- NM.threadTotalMessages t
@@ -271,17 +259,21 @@ loadOne ref t = do
     oldestDateRelative <- relativeTime oldestDate
     newestDateRelative <- relativeTime newestDate
 
-    let line = Line { lineIndex        = len + 1
-                    , threadOldestDate = (oldestDate, oldestDateRelative)
-                    , threadNewestDate = (newestDate, newestDateRelative)
-                    , threadMatched    = matched
-                    , threadTotal      = total
-                    , threadAuthors    = decodeString authors
-                    , threadSubject    = decodeString subject
-                    , threadTags       = tagList
-                    }
+    let theme = bufferTheme buf
+        len   = listLength $ bufferList buf
+        ld    = LineData { threadOldestDate = (oldestDate, oldestDateRelative)
+                         , threadNewestDate = (newestDate, newestDateRelative)
+                         , threadMatched    = matched
+                         , threadTotal      = total
+                         , threadAuthors    = decodeString authors
+                         , threadSubject    = decodeString subject
+                         , threadTags       = tagList
+                         }
+        line  = Line { lineData   = ld
+                     , lineRender = (themeDrawLine theme) (themeAttrs theme)
+                     }
 
-    writeIORef ref buf { bufferLines     = bufferLines buf ++ [line]
+    writeIORef ref buf { bufferList      = listAppend (bufferList buf) line
                        , bufferStatusBar = (bufferStatusBar buf) { sBarTotal = len + 1 }
                        }
 
@@ -294,6 +286,7 @@ load (ref, lock) mvar ts = do
         NM.threadDestroy t >> NM.threadsMoveToNext ts
         cancelled <- isCancelledLoad ref
         unless cancelled $ load (ref, lock) mvar ts
+
 
 new :: (IORef Search, Lock) -> MVar UIEvent -> FilePath -> String -> IO ()
 new (ref, lock) mvar fp term = do
