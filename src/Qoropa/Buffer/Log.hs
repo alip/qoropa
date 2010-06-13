@@ -45,7 +45,7 @@ import qualified Qoropa.Lock as Lock (with)
 import Qoropa.Widget.List
     ( Line(..), List(..)
     , emptyList
-    , listLength, listAppend, listAppendLeft, listRender
+    , listLength, listAppend, listRender
     , listScrollUp, listScrollDown
     , listSelectPrev, listSelectNext
     , toRegion
@@ -211,7 +211,7 @@ handler (ref, lock) mvar pri =
                     line  = Line { lineData   = LineData { lineDataTime = now, lineDataRecord = record }
                                  , lineRender = (themeDrawLine theme) (themeAttrs theme)
                                  }
-                writeIORef ref buf { bufferList = listAppendLeft (bufferList buf) line
+                writeIORef ref buf { bufferList = listAppend (bufferList buf) line
                                    , bufferStatusBar = (bufferStatusBar buf) { sBarTotal = len + 1}
                                    }
                 forkIO $ putMVar mvar Redraw
