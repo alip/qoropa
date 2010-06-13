@@ -24,7 +24,6 @@ module Qoropa.Widget.List
     , listRender
     , listScrollUp, listScrollDown
     , listSelectPrev, listSelectNext
-    , toRegion
     ) where
 
 import Data.Maybe    (isJust, fromJust)
@@ -34,9 +33,7 @@ import qualified Data.Sequence as Seq
     , (|>), (<|)
     )
 
-import Graphics.Vty
-    ( DisplayRegion(..), Image
-    )
+import Graphics.Vty (Image)
 
 data Line a = Line
     { lineData   :: a
@@ -49,12 +46,6 @@ data List a = List
     , listSelected    :: Int
     , listLineFill    :: Maybe Image
     }
-
-toRegion :: Int -> Int -> DisplayRegion
-toRegion y x = DisplayRegion { region_height = toEnum y, region_width = toEnum x }
-
-columns :: DisplayRegion -> Int
-columns = fromIntegral . toInteger . region_height
 
 emptyList :: List a
 emptyList = List
@@ -87,11 +78,10 @@ linesRender' lns sel i
         myRender :: Line a -> Image
         myRender l = lineRender l (lineData l) (sel == i)
 
-listRender :: List a -> DisplayRegion -> [Image]
-listRender ls r =
+listRender :: List a -> Int -> [Image]
+listRender ls cols =
     linesRender lns sel ++ fill
     where
-        cols = columns r
         lns  = Seq.take cols $ Seq.drop (listDisplayHead ls) (listLines ls)
         sel  = listSelected ls - listDisplayHead ls
         len  = Seq.length lns
@@ -112,12 +102,11 @@ listScrollUp ls cnt =
         else Nothing
 
 
-listScrollDown :: List a -> DisplayRegion -> Int -> Maybe (List a)
-listScrollDown ls r cnt =
+listScrollDown :: List a -> Int -> Int -> Maybe (List a)
+listScrollDown ls cols cnt =
     let len   = listLength ls
         headd = listDisplayHead ls + cnt
         sel   = listSelected ls
-        cols  = columns r
     in
 
     if headd + cols - 2 <= len
@@ -139,16 +128,16 @@ listSelectPrev ls cnt =
              )
         else Nothing
 
-listSelectNext :: List a -> DisplayRegion -> Int -> Maybe (List a)
-listSelectNext ls r cnt =
+listSelectNext :: List a -> Int -> Int -> Maybe (List a)
+listSelectNext ls cols cnt =
     let len = listLength ls
         sel = listSelected ls
-        lst = listDisplayHead ls + columns r
+        lst = listDisplayHead ls + cols
     in
 
     if sel + cnt < len
         then ( if sel + cnt + 3 > lst
-                then listScrollDown ls r cnt
+                then listScrollDown ls cols cnt
                 else Just ls { listSelected = sel + cnt }
              )
         else Nothing

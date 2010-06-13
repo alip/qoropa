@@ -48,7 +48,6 @@ import Qoropa.Widget.List
     , listLength, listAppend, listRender
     , listScrollUp, listScrollDown
     , listSelectPrev, listSelectNext
-    , toRegion
     )
 
 import {-# SOURCE #-} Qoropa.UI (UIEvent(..))
@@ -125,7 +124,7 @@ paint buf height =
         myAttr              = themeAttrs myTheme
         myDrawStatusBar     = themeDrawStatusBar myTheme
         myDrawStatusMessage = themeDrawStatusMessage myTheme
-        lns = listRender (bufferList buf) (toRegion (height - 2) 0)
+        lns = listRender (bufferList buf) (height - 2)
         bar = myDrawStatusBar myAttr (bufferStatusBar buf)
         msg = myDrawStatusMessage myAttr (bufferStatusMessage buf)
 
@@ -152,7 +151,7 @@ scrollDown' :: IORef Log -> Int -> Int -> IO ()
 scrollDown' ref cols cnt = do
     buf <- readIORef ref
 
-    case listScrollDown (bufferList buf) (toRegion cols 0) cnt of
+    case listScrollDown (bufferList buf) cols cnt of
         Just ls -> writeIORef ref buf { bufferList      = ls
                                       , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
                                       }
@@ -184,7 +183,7 @@ selectNext' :: IORef Log -> Int -> Int -> IO ()
 selectNext' ref cols cnt = do
     buf <- readIORef ref
 
-    case listSelectNext (bufferList buf) (toRegion cols 0) cnt of
+    case listSelectNext (bufferList buf) cols cnt of
         Just ls -> writeIORef ref buf { bufferList      = ls
                                       , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
                                       }
