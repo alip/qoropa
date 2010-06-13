@@ -31,8 +31,6 @@ import Data.IORef              (IORef, readIORef, writeIORef)
 import Data.Maybe              (isJust, fromJust)
 import Foreign.C.Types         (CTime)
 
-import System.Log.Logger       (rootLoggerName, debugM)
-
 import Codec.Binary.UTF8.String (decodeString)
 
 import Graphics.Vty
@@ -214,14 +212,10 @@ selectNext' ref cols cnt = do
     buf <- readIORef ref
 
     case listSelectNext (bufferList buf) (toRegion cols 0) cnt of
-        Just ls -> do
-            debugM rootLoggerName $ "old: " ++ show (listSelected $ bufferList buf) ++ " " ++
-                                    "new: " ++ show (listSelected ls) ++ " " ++
-                                    "oldhead: " ++ show (listDisplayHead $ bufferList buf) ++ " " ++
-                                    "newhead: " ++ show (listDisplayHead ls)
+        Just ls ->
             writeIORef ref buf { bufferList      = ls
-                                      , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
-                                      }
+                               , bufferStatusBar = (bufferStatusBar buf) { sBarCurrent = listSelected ls }
+                               }
         Nothing -> do
             msg <- themeFormatHitTheBottom (bufferTheme buf)
             writeIORef ref buf { bufferStatusMessage = (bufferStatusMessage buf) { sMessage = msg }
